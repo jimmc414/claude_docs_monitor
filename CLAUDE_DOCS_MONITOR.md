@@ -21,6 +21,10 @@ Required: Python 3.10+, `httpx`. Optional: `rich` (colored output, progress bars
 | `requirements.txt` | `httpx[http2]>=0.27,<1.0` |
 | `data/snapshots.db` | SQLite database (created on first run) |
 | `data/pages/*.md` | Latest doc pages as local files (updated every run) |
+| `data/report.html` | Self-contained HTML report (overwritten each run) |
+| `data/report.md` | Markdown report (overwritten each run) |
+| `data/history.html` | Cumulative HTML report (appended each run) |
+| `data/history.md` | Cumulative Markdown report (appended each run) |
 
 ## Commands
 
@@ -43,6 +47,7 @@ python claude_docs_monitor.py check [OPTIONS]
 | `--quiet` | Summary table only, suppress inline diffs |
 | `--save-diffs DIR` | Write `.diff` files per changed page to DIR |
 | `--dump DIR` | Override local page dump directory (default: `data/pages`) |
+| `--report DIR` | Override report output directory (default: `data/`) |
 | `--poll SEC` | Re-run every SEC seconds (e.g. `--poll 3600` for hourly) |
 
 First run snapshots all pages as baseline (no diffs). Subsequent runs compare against previous snapshots.
@@ -119,6 +124,7 @@ python claude_docs_monitor.py dump ~/claude-docs-review
 - **First run:** "First run: 56 pages snapshotted." No diffs generated.
 - **Subsequent runs:** Summary table (changed/added/removed/errors) + unified diffs for changed pages.
 - **Every run** updates `data/pages/` with latest `.md` files regardless of changes.
+- **Every run** generates `report.html` and `report.md` (latest run only, overwritten) plus `history.html` and `history.md` (cumulative, appended). HTML reports are self-contained with inline CSS and syntax-highlighted diffs.
 
 ## Data Model
 

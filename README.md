@@ -53,7 +53,8 @@ Every `check` run generates two report files in `data/` (override with `--report
 
 Both are overwritten on each run. First run produces a "pages snapshotted" summary with the full URL list. Subsequent runs include a change summary table and per-page unified diffs.
 
-<img src="report.png" alt="HTML report example" width="800">
+<img width="1032" height="693" alt="image" src="https://github.com/user-attachments/assets/4d88fdf6-e47f-4d07-ab74-03cb56483619" />
+
 
 ## What gets stored
 

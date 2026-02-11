@@ -51,7 +51,7 @@ Every `check` run generates four report files in `data/` (override with `--repor
 - **`report.html`** / **`report.md`** — latest run only, overwritten each time
 - **`history.html`** / **`history.md`** — cumulative log, appended each run with a separator between entries
 
-Reports include a summary table (changed/added/removed/errors) and per-page unified diffs. The HTML versions are self-contained with inline CSS and syntax-highlighted diffs (green/red coloring). First run produces a "pages snapshotted" baseline.
+Reports include a summary table (changed/added/removed/errors) and per-page unified diffs showing the exact text that was added, removed, or modified — the actual wording changes, not just a flag that something changed. The HTML versions are self-contained with inline CSS and syntax-highlighted diffs (green for additions, red for removals). First run produces a "pages snapshotted" baseline.
 
 <img width="1032" height="693" alt="image" src="https://github.com/user-attachments/assets/4d88fdf6-e47f-4d07-ab74-03cb56483619" />
 

@@ -122,7 +122,7 @@ python claude_docs_monitor.py dump ~/claude-docs-review
 ## Output Behavior
 
 - **First run:** "First run: 56 pages snapshotted." No diffs generated.
-- **Subsequent runs:** Summary table (changed/added/removed/errors) + unified diffs for changed pages.
+- **Subsequent runs:** Summary table (changed/added/removed/errors) + unified diffs for changed pages, showing the exact text that was added, removed, or modified line by line.
 - **Every run** updates `data/pages/` with latest `.md` files regardless of changes.
 - **Every run** generates `report.html` and `report.md` (latest run only, overwritten) plus `history.html` and `history.md` (cumulative, appended). HTML reports are self-contained with inline CSS and syntax-highlighted diffs.
 

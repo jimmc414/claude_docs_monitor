@@ -469,6 +469,168 @@ pre { background: #f6f8fa; padding: 1em; overflow-x: auto; border-radius: 6px;
     (output_dir / "report.html").write_text(html, encoding="utf-8")
 
 
+def _build_md_entry(report_data: dict) -> str:
+    """Build a single Markdown entry for one check run."""
+    lines = [
+        f"## {report_data['timestamp']}",
+        "",
+    ]
+    if report_data["first_run"]:
+        lines.append(f"**First run: {report_data['total']} pages snapshotted.**\n")
+        for url in report_data["urls"]:
+            lines.append(f"- {url}")
+    else:
+        lines.append("| Metric | Count |")
+        lines.append("|--------|------:|")
+        lines.append(f"| Changed | {len(report_data['changes'])} |")
+        lines.append(f"| Added | {len(report_data['added'])} |")
+        lines.append(f"| Removed | {len(report_data['removed'])} |")
+        lines.append(f"| Errors | {len(report_data['errors'])} |")
+
+        if report_data["added"]:
+            lines.append("\n### Added Pages\n")
+            for url in report_data["added"]:
+                lines.append(f"- {url}")
+
+        if report_data["removed"]:
+            lines.append("\n### Removed Pages\n")
+            for url in report_data["removed"]:
+                lines.append(f"- {url}")
+
+        if report_data["errors"]:
+            lines.append("\n### Errors\n")
+            for e in report_data["errors"]:
+                lines.append(f"- **{e['url']}**: {e['error']}")
+
+        if report_data["changes"]:
+            lines.append("\n### Diffs\n")
+            for ch in report_data["changes"]:
+                lines.append(f"#### {ch['url']}\n")
+                lines.append("```diff")
+                lines.append(ch["diff"])
+                lines.append("```")
+
+    return "\n".join(lines) + "\n"
+
+
+def _build_html_entry(report_data: dict, esc) -> str:
+    """Build HTML fragment for one check run."""
+    parts = [
+        f'<h2>{esc(report_data["timestamp"])}</h2>',
+    ]
+    if report_data["first_run"]:
+        parts.append(f"<p><strong>First run: {report_data['total']} pages snapshotted.</strong></p>")
+        parts.append("<ul>")
+        for url in report_data["urls"]:
+            parts.append(f"<li>{esc(url)}</li>")
+        parts.append("</ul>")
+    else:
+        parts.append("<table><tr><th>Metric</th><th>Count</th></tr>")
+        parts.append(f"<tr><td>Changed</td><td>{len(report_data['changes'])}</td></tr>")
+        parts.append(f"<tr><td>Added</td><td>{len(report_data['added'])}</td></tr>")
+        parts.append(f"<tr><td>Removed</td><td>{len(report_data['removed'])}</td></tr>")
+        parts.append(f"<tr><td>Errors</td><td>{len(report_data['errors'])}</td></tr>")
+        parts.append("</table>")
+
+        if report_data["added"]:
+            parts.append("<h3>Added Pages</h3><ul>")
+            for url in report_data["added"]:
+                parts.append(f"<li>{esc(url)}</li>")
+            parts.append("</ul>")
+
+        if report_data["removed"]:
+            parts.append("<h3>Removed Pages</h3><ul>")
+            for url in report_data["removed"]:
+                parts.append(f"<li>{esc(url)}</li>")
+            parts.append("</ul>")
+
+        if report_data["errors"]:
+            parts.append("<h3>Errors</h3><ul>")
+            for e in report_data["errors"]:
+                parts.append(f"<li><strong>{esc(e['url'])}</strong>: {esc(e['error'])}</li>")
+            parts.append("</ul>")
+
+        if report_data["changes"]:
+            parts.append("<h3>Diffs</h3>")
+            for ch in report_data["changes"]:
+                parts.append(f"<h4>{esc(ch['url'])}</h4><pre>")
+                for line in ch["diff"].splitlines():
+                    escaped = esc(line)
+                    if line.startswith("+"):
+                        parts.append(f'<span class="add">{escaped}</span>')
+                    elif line.startswith("-"):
+                        parts.append(f'<span class="del">{escaped}</span>')
+                    elif line.startswith("@@"):
+                        parts.append(f'<span class="hunk">{escaped}</span>')
+                    else:
+                        parts.append(escaped)
+                parts.append("</pre>")
+
+    return "".join(parts)
+
+
+def append_md_history(report_data: dict, output_dir: Path):
+    """Append a new entry to output_dir/history.md."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    history_path = output_dir / "history.md"
+    entry = _build_md_entry(report_data)
+    if history_path.exists():
+        with open(history_path, "a", encoding="utf-8") as f:
+            f.write("\n---\n\n")
+            f.write(entry)
+    else:
+        with open(history_path, "w", encoding="utf-8") as f:
+            f.write("# Claude Docs Monitor History\n\n")
+            f.write(entry)
+
+
+def append_html_history(report_data: dict, output_dir: Path):
+    """Append a new entry to output_dir/history.html."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def esc(text: str) -> str:
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    css = """\
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+       max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #24292e; }
+h1 { border-bottom: 1px solid #e1e4e8; padding-bottom: .3em; }
+h2 { border-bottom: 1px solid #eaecef; padding-bottom: .2em; margin-top: 2em; }
+h3 { margin-top: 1.2em; }
+h4 { margin-top: 1em; }
+table { border-collapse: collapse; margin: 1em 0; }
+th, td { border: 1px solid #dfe2e5; padding: .4em .8em; text-align: left; }
+th { background: #f6f8fa; }
+td:last-child { text-align: right; }
+ul { padding-left: 1.4em; }
+pre { background: #f6f8fa; padding: 1em; overflow-x: auto; border-radius: 6px;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: .85em; }
+.add { background: #e6ffec; }
+.del { background: #ffebe9; }
+.hunk { color: #6a737d; }
+hr { border: none; border-top: 2px solid #e1e4e8; margin: 2em 0; }"""
+
+    entry = _build_html_entry(report_data, esc)
+    history_path = output_dir / "history.html"
+
+    if history_path.exists():
+        content = history_path.read_text(encoding="utf-8")
+        insert_point = content.rfind("</body>")
+        if insert_point != -1:
+            content = content[:insert_point] + "<hr>" + entry + content[insert_point:]
+            history_path.write_text(content, encoding="utf-8")
+            return
+
+    # Create new file
+    html = (
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        f"<title>Claude Docs Monitor History</title><style>{css}</style></head>"
+        f"<body><h1>Claude Docs Monitor History</h1>{entry}</body></html>\n"
+    )
+    history_path.write_text(html, encoding="utf-8")
+
+
 def save_diff_files(changes: list[dict], diff_dir: str):
     """Save .diff files to disk."""
     diff_path = Path(diff_dir)
@@ -624,10 +786,12 @@ async def cmd_check(args):
     }
     generate_md_report(report_data, report_dir)
     generate_html_report(report_data, report_dir)
+    append_md_history(report_data, report_dir)
+    append_html_history(report_data, report_dir)
     if HAS_RICH:
-        console.print(f"[green]Reports written to {report_dir}/report.md and {report_dir}/report.html[/green]")
+        console.print(f"[green]Reports written to {report_dir}/ (report + history)[/green]")
     else:
-        print(f"Reports written to {report_dir}/report.md and {report_dir}/report.html")
+        print(f"Reports written to {report_dir}/ (report + history)")
 
 
 async def cmd_check_poll(args):

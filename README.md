@@ -46,12 +46,12 @@ First run fetches everything and stores a baseline. No diffs are shown. Second r
 
 ## Reports
 
-Every `check` run generates two report files in `data/` (override with `--report DIR`):
+Every `check` run generates four report files in `data/` (override with `--report DIR`):
 
-- **`report.html`** — self-contained HTML with inline CSS, summary table, and syntax-highlighted diffs (green/red coloring for added/removed lines)
-- **`report.md`** — structured Markdown with the same content, renders on GitHub and in any Markdown viewer
+- **`report.html`** / **`report.md`** — latest run only, overwritten each time
+- **`history.html`** / **`history.md`** — cumulative log, appended each run with a separator between entries
 
-Both are overwritten on each run. First run produces a "pages snapshotted" summary with the full URL list. Subsequent runs include a change summary table and per-page unified diffs.
+Reports include a summary table (changed/added/removed/errors) and per-page unified diffs. The HTML versions are self-contained with inline CSS and syntax-highlighted diffs (green/red coloring). First run produces a "pages snapshotted" baseline.
 
 <img width="1032" height="693" alt="image" src="https://github.com/user-attachments/assets/4d88fdf6-e47f-4d07-ab74-03cb56483619" />
 
@@ -64,6 +64,8 @@ data/
   pages/          # latest .md files, updated every run
   report.html     # self-contained HTML report (latest run)
   report.md       # Markdown report (latest run)
+  history.html    # cumulative HTML report (appended each run)
+  history.md      # cumulative Markdown report (appended each run)
 ```
 
 Two tables: `index_snapshots` (the llms.txt file itself) and `page_snapshots` (one row per fetch per URL). Append-only. You can query the database directly if you want something the CLI doesn't expose.

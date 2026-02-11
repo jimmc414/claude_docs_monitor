@@ -14,6 +14,7 @@ Claude Code ships documentation updates without a changelog or RSS feed. If you'
 4. Computes unified diffs for anything that changed
 5. Stores everything in SQLite (append-only, full history)
 6. Updates a local folder of `.md` files
+7. Generates HTML and Markdown reports
 
 The index itself is tracked too — if Anthropic adds or removes a doc page, that shows up in the report.
 
@@ -32,6 +33,7 @@ python claude_docs_monitor.py                      # fetch, diff, update local f
 python claude_docs_monitor.py check --quiet        # summary table only
 python claude_docs_monitor.py check --poll 3600    # re-check every hour
 python claude_docs_monitor.py check --save-diffs out/
+python claude_docs_monitor.py check --report ~/reports  # write reports to custom dir
 python claude_docs_monitor.py history              # browse snapshot history
 python claude_docs_monitor.py diff URL             # diff last two snapshots of a page
 python claude_docs_monitor.py urls                 # list all tracked URLs
@@ -42,12 +44,25 @@ Running with no arguments defaults to `check`.
 
 First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
 
+## Reports
+
+Every `check` run generates two report files in `data/` (override with `--report DIR`):
+
+- **`report.html`** — self-contained HTML with inline CSS, summary table, and syntax-highlighted diffs (green/red coloring for added/removed lines)
+- **`report.md`** — structured Markdown with the same content, renders on GitHub and in any Markdown viewer
+
+Both are overwritten on each run. First run produces a "pages snapshotted" summary with the full URL list. Subsequent runs include a change summary table and per-page unified diffs.
+
+![HTML report example](report.png)
+
 ## What gets stored
 
 ```
 data/
   snapshots.db    # SQLite: full history of every fetch
   pages/          # latest .md files, updated every run
+  report.html     # self-contained HTML report (latest run)
+  report.md       # Markdown report (latest run)
 ```
 
 Two tables: `index_snapshots` (the llms.txt file itself) and `page_snapshots` (one row per fetch per URL). Append-only. You can query the database directly if you want something the CLI doesn't expose.

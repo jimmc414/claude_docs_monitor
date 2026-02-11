@@ -1,0 +1,71 @@
+# claude_docs_monitor
+
+Tracks changes to Claude Code documentation across all 56 pages at `code.claude.com/docs/`. Fetches every page, stores snapshots in SQLite, produces unified diffs when content changes, and maintains a local mirror of the markdown files.
+
+## Why
+
+Claude Code ships documentation updates without a changelog or RSS feed. If you're building on top of it or writing about it, you need to know what changed and when. This tool gives you that.
+
+## How it works
+
+1. Fetches the `llms.txt` index to discover all doc page URLs
+2. Fetches all pages concurrently (async HTTP/2, 5 connections, polite backoff)
+3. Compares SHA-256 hashes against the last stored snapshot
+4. Computes unified diffs for anything that changed
+5. Stores everything in SQLite (append-only, full history)
+6. Updates a local folder of `.md` files
+
+The index itself is tracked too — if Anthropic adds or removes a doc page, that shows up in the report.
+
+## Setup
+
+```
+pip install -r requirements.txt
+```
+
+One dependency: `httpx` with HTTP/2 support. `rich` is optional (colored output, progress bars).
+
+## Usage
+
+```
+python claude_docs_monitor.py                      # fetch, diff, update local files
+python claude_docs_monitor.py check --quiet        # summary table only
+python claude_docs_monitor.py check --poll 3600    # re-check every hour
+python claude_docs_monitor.py check --save-diffs out/
+python claude_docs_monitor.py history              # browse snapshot history
+python claude_docs_monitor.py diff URL             # diff last two snapshots of a page
+python claude_docs_monitor.py urls                 # list all tracked URLs
+python claude_docs_monitor.py dump ~/review        # export .md files from DB (no network)
+```
+
+Running with no arguments defaults to `check`.
+
+First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
+
+## What gets stored
+
+```
+data/
+  snapshots.db    # SQLite: full history of every fetch
+  pages/          # latest .md files, updated every run
+```
+
+Two tables: `index_snapshots` (the llms.txt file itself) and `page_snapshots` (one row per fetch per URL). Append-only. You can query the database directly if you want something the CLI doesn't expose.
+
+## Design decisions
+
+- **httpx async + HTTP/2**: Connection multiplexing on a single host. 56 URLs in roughly 12 round trips.
+- **SQLite**: Zero-config, queryable, works everywhere. Better than a folder of timestamped files when you have 56 pages and want to ask questions about history.
+- **SHA-256 before diffing**: Hash comparison is O(1). Only compute expensive diffs when something actually changed.
+- **difflib.unified_diff**: Standard library. Produces normal unified diffs that work with any tool that reads them.
+- **Single file**: No package structure, no setup.py, no src/ directory. One file, one dependency, run it.
+
+## Limitations
+
+- Some pages (notably the changelog) embed dynamic content like CSRF tokens and request IDs that cause false-positive diffs on every run. These are real differences in the fetched content, not bugs, but they are noise.
+- The tool fetches rendered markdown from the docs site. If the site serves different content based on headers or cookies, you'll get whatever an unauthenticated `httpx` client gets.
+- No notification system. Pipe it into whatever you already use.
+
+## License
+
+Do whatever you want with it.

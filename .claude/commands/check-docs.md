@@ -9,9 +9,10 @@ Run the Claude Code documentation change monitor. Fetches all 56 doc pages, comp
 
 ## What it does
 
-1. Runs `python claude_docs_monitor.py` from the project directory
-2. Shows the terminal output (summary table + diffs)
-3. Reads and summarizes the generated `data/report.md` for a quick overview
+1. Ensures `httpx[http2]` is installed
+2. Runs `claude_docs_monitor.py` from `~/.claude/lib/`
+3. Shows the terminal output (summary table + diffs)
+4. Reads and summarizes the generated report for a quick overview
 
 ## Usage
 
@@ -23,13 +24,35 @@ Run the Claude Code documentation change monitor. Fetches all 56 doc pages, comp
 
 ## Instructions
 
-Run the following command from the project root at `/mnt/c/python/claude_docs`:
+This skill is self-contained. The monitor script lives at `~/.claude/lib/claude_docs_monitor.py` and stores its data at `~/.local/share/claude-docs-monitor/`.
+
+### Step 1: Bootstrap (only needed once)
+
+Check if the script and data directory exist. If not, create them:
 
 ```bash
-python /mnt/c/python/claude_docs/claude_docs_monitor.py $ARGUMENTS
+mkdir -p ~/.local/share/claude-docs-monitor
 ```
 
-After the command completes, read `/mnt/c/python/claude_docs/data/report.md` (first 30 lines) and present a brief summary to the user highlighting:
+If `~/.claude/lib/claude_docs_monitor.py` does not exist, tell the user:
+"The monitor script is not installed. Copy it from the repo: `cp claude_docs_monitor.py ~/.claude/lib/`"
+Then stop.
+
+### Step 2: Ensure httpx is installed
+
+```bash
+python -c "import httpx" 2>/dev/null || pip install "httpx[http2]>=0.27,<1.0"
+```
+
+### Step 3: Run the monitor
+
+```bash
+cd ~/.local/share/claude-docs-monitor && python ~/.claude/lib/claude_docs_monitor.py $ARGUMENTS
+```
+
+### Step 4: Summarize
+
+After the command completes, read `~/.local/share/claude-docs-monitor/data/report.md` (first 30 lines) and present a brief summary to the user highlighting:
 - Number of changed/added/removed pages
 - Which specific pages changed (if any)
 - Any errors encountered

@@ -44,7 +44,16 @@ Running with no arguments defaults to `check`.
 
 ### Claude Code slash command
 
-A `/check-docs` slash command is included at `.claude/commands/check-docs.md`. If you use Claude Code, it runs the monitor and summarizes the results directly in your session. To install globally, copy it to `~/.claude/commands/`.
+A standalone `/check-docs` slash command is included. It runs the monitor and summarizes the results directly in your Claude Code session — no need to clone the repo first.
+
+**Install (two files):**
+
+```bash
+cp .claude/commands/check-docs.md ~/.claude/commands/
+cp claude_docs_monitor.py ~/.claude/lib/
+```
+
+The skill stores data at `~/.local/share/claude-docs-monitor/` and auto-installs `httpx` if needed. After installing, just type `/check-docs` in any Claude Code session.
 
 First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
 

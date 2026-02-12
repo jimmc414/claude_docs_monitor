@@ -14,7 +14,7 @@ Claude Code ships documentation updates without a changelog or RSS feed. If you'
 4. Computes unified diffs for anything that changed
 5. Stores everything in SQLite (append-only, full history)
 6. Updates a local folder of `.md` files
-7. Generates HTML and Markdown reports
+7. Generates HTML and Markdown reports (per-run snapshots + cumulative history)
 
 The index itself is tracked too — if Anthropic adds or removes a doc page, that shows up in the report.
 

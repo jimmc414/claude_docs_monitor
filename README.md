@@ -42,6 +42,10 @@ python claude_docs_monitor.py dump ~/review        # export .md files from DB (n
 
 Running with no arguments defaults to `check`.
 
+### Claude Code slash command
+
+A `/check-docs` slash command is included at `.claude/commands/check-docs.md`. If you use Claude Code, it runs the monitor and summarizes the results directly in your session. To install globally, copy it to `~/.claude/commands/`.
+
 First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
 
 ## Reports

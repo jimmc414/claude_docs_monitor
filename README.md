@@ -68,7 +68,9 @@ data/
   history.md      # cumulative Markdown report (appended each run)
 ```
 
-Two tables: `index_snapshots` (the llms.txt file itself) and `page_snapshots` (one row per fetch per URL). Append-only. You can query the database directly if you want something the CLI doesn't expose.
+Two tables: `index_snapshots` (the llms.txt file itself) and `page_snapshots` (one row per fetch per URL). Append-only — every fetch is stored permanently, so you have a full history of every version of every page. You can query the database directly if you want something the CLI doesn't expose.
+
+The `history.html` and `history.md` files grow over time, accumulating every run's summary and diffs into a single scrollable document. This gives you a complete, human-readable changelog of all documentation changes without needing to query the database.
 
 ## Design decisions
 

@@ -1126,7 +1126,7 @@ def build_parser() -> argparse.ArgumentParser:
   %(prog)s history                      show recent snapshot history (all pages)
   %(prog)s history URL                  show history for one page
   %(prog)s diff URL                     show diff between last two snapshots of a page
-  %(prog)s urls                         list all 56 tracked URLs with status
+  %(prog)s urls                         list all tracked URLs with status
   %(prog)s rebuild-history               regenerate history files from DB
   %(prog)s dump                         export latest snapshots to data/pages/
   %(prog)s dump ~/review                export to a custom directory""",

@@ -1,6 +1,6 @@
 # claude_docs_monitor
 
-Tracks changes to Claude Code documentation across all 56 pages at `code.claude.com/docs/`. Fetches every page, stores snapshots in SQLite, produces unified diffs when content changes, and maintains a local mirror of the markdown files.
+Tracks changes to Claude Code documentation across all pages at `code.claude.com/docs/`. Fetches every page, stores snapshots in SQLite, produces unified diffs when content changes, and maintains a local mirror of the markdown files.
 
 ## Why
 
@@ -89,8 +89,8 @@ The `history.html` and `history.md` files grow over time, accumulating every run
 
 ## Design decisions
 
-- **httpx async + HTTP/2**: Connection multiplexing on a single host. 56 URLs in roughly 12 round trips.
-- **SQLite**: Zero-config, queryable, works everywhere. Better than a folder of timestamped files when you have 56 pages and want to ask questions about history.
+- **httpx async + HTTP/2**: Connection multiplexing on a single host. all URLs in roughly 12 round trips.
+- **SQLite**: Zero-config, queryable, works everywhere. Better than a folder of timestamped files when you have 50+ pages and want to ask questions about history.
 - **SHA-256 before diffing**: Hash comparison is O(1). Only compute expensive diffs when something actually changed.
 - **difflib.unified_diff**: Standard library. Produces normal unified diffs that work with any tool that reads them.
 - **Single file**: No package structure, no setup.py, no src/ directory. One file, one dependency, run it.

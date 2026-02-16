@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Single-file Python tool that monitors all 56 pages of Claude Code documentation at `code.claude.com/docs/` for changes. It fetches every page, stores snapshots in SQLite, computes unified diffs when content changes, and keeps a local folder of `.md` files updated.
+Single-file Python tool that monitors all pages of Claude Code documentation at `code.claude.com/docs/` for changes. It fetches every page, stores snapshots in SQLite, computes unified diffs when content changes, and keeps a local folder of `.md` files updated.
 
 ## Setup
 
@@ -76,7 +76,7 @@ Shows unified diff between the two most recent snapshots of a specific URL. URL 
 python claude_docs_monitor.py urls
 ```
 
-Lists all 56 tracked URLs with last fetch time, HTTP status, and content hash.
+Lists all tracked URLs with last fetch time, HTTP status, and content hash.
 
 ### dump
 
@@ -132,7 +132,7 @@ python claude_docs_monitor.py dump ~/claude-docs-review
 
 ## Output Behavior
 
-- **First run:** "First run: 56 pages snapshotted." No diffs generated.
+- **First run:** "First run: N pages snapshotted." No diffs generated.
 - **Subsequent runs:** Summary table (changed/added/removed/errors) + unified diffs for changed pages, showing the exact text that was added, removed, or modified line by line.
 - **Every run** updates `data/pages/` with latest `.md` files regardless of changes.
 - **Every run** generates `report.html` and `report.md` (latest run only, overwritten) plus `history.html` and `history.md` (cumulative, appended). HTML reports are self-contained with inline CSS and syntax-highlighted diffs.

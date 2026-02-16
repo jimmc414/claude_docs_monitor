@@ -923,6 +923,133 @@ def url_to_filename(url: str) -> str:
     return path
 
 
+def cmd_rebuild_history(args):
+    """Rebuild history.html and history.md from all stored snapshots."""
+    conn = init_db()
+    include_html = getattr(args, "include_html", False)
+    output_dir = Path(getattr(args, "report", None) or "data")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Delete existing history files
+    for f in ("history.html", "history.md"):
+        p = output_dir / f
+        if p.exists():
+            p.unlink()
+
+    # Get all index snapshots in order — each represents a run
+    index_rows = conn.execute(
+        "SELECT id, fetched_at, urls_json FROM index_snapshots ORDER BY id"
+    ).fetchall()
+
+    if not index_rows:
+        print("No snapshots in database. Run 'check' first.")
+        return
+
+    # For each consecutive pair of index snapshots, reconstruct what changed
+    entries_written = 0
+    for run_idx, idx_row in enumerate(index_rows):
+        run_time = idx_row["fetched_at"]
+        current_urls = json.loads(idx_row["urls_json"])
+
+        # Determine time window: from this index fetch to the next (or far future)
+        if run_idx + 1 < len(index_rows):
+            next_time = index_rows[run_idx + 1]["fetched_at"]
+        else:
+            next_time = "9999-12-31T23:59:59+00:00"
+
+        # Get page snapshots for this run (fetched between this index and the next)
+        page_rows = conn.execute(
+            "SELECT url, content, hash, status_code, error "
+            "FROM page_snapshots WHERE fetched_at >= ? AND fetched_at < ? "
+            "ORDER BY id",
+            (run_time, next_time),
+        ).fetchall()
+
+        if not page_rows:
+            continue
+
+        # Build a lookup of this run's pages
+        run_pages = {}
+        for pr in page_rows:
+            run_pages[pr["url"]] = dict(pr)
+
+        # First run or subsequent?
+        if run_idx == 0:
+            timestamp = datetime.fromisoformat(run_time).strftime("%Y-%m-%d %H:%M:%S UTC")
+            report_data = {
+                "timestamp": timestamp,
+                "first_run": True,
+                "total": len(current_urls),
+                "urls": current_urls,
+                "changes": [],
+                "added": [],
+                "removed": [],
+                "errors": [run_pages[u] for u in run_pages if run_pages[u]["error"]],
+            }
+        else:
+            prev_urls = json.loads(index_rows[run_idx - 1]["urls_json"])
+            added = sorted(set(current_urls) - set(prev_urls))
+            removed = sorted(set(prev_urls) - set(current_urls))
+
+            # Get previous run's page snapshots for comparison
+            prev_time = index_rows[run_idx - 1]["fetched_at"]
+            prev_page_rows = conn.execute(
+                "SELECT url, content, hash FROM page_snapshots "
+                "WHERE fetched_at >= ? AND fetched_at < ? ORDER BY id",
+                (prev_time, run_time),
+            ).fetchall()
+            prev_pages = {}
+            for pr in prev_page_rows:
+                prev_pages[pr["url"]] = dict(pr)
+
+            # Compute diffs
+            changes = []
+            for url in current_urls:
+                cur = run_pages.get(url)
+                prev = prev_pages.get(url)
+                if cur and prev and cur["hash"] and prev["hash"]:
+                    if cur["hash"] != prev["hash"] and cur["content"] and prev["content"]:
+                        diff_text = compute_diff(prev["content"], cur["content"], url)
+                        changes.append({"url": url, "diff": diff_text})
+
+            errors = [run_pages[u] for u in run_pages if run_pages[u].get("error")]
+
+            # Filter HTML noise unless --include-html
+            if not include_html:
+                changes = [ch for ch in changes if not (ch["diff"] and is_html_diff(ch["diff"]))]
+
+            timestamp = datetime.fromisoformat(run_time).strftime("%Y-%m-%d %H:%M:%S UTC")
+            report_data = {
+                "timestamp": timestamp,
+                "first_run": False,
+                "total": len(current_urls),
+                "urls": current_urls,
+                "changes": changes,
+                "added": added,
+                "removed": removed,
+                "errors": errors,
+            }
+
+        append_md_history(report_data, output_dir)
+        append_html_history(report_data, output_dir)
+        entries_written += 1
+
+        n_changes = len(report_data["changes"])
+        n_added = len(report_data["added"])
+        label = "first run" if report_data["first_run"] else f"{n_changes} changes, {n_added} added"
+        if HAS_RICH:
+            console.print(f"  [dim]Run {entries_written}: {report_data['timestamp']} — {label}[/dim]")
+        else:
+            print(f"  Run {entries_written}: {report_data['timestamp']} — {label}")
+
+    if HAS_RICH:
+        console.print(f"\n[green]Rebuilt history from {entries_written} runs → "
+                      f"{output_dir}/history.html and {output_dir}/history.md[/green]")
+    else:
+        print(f"\nRebuilt history from {entries_written} runs → "
+              f"{output_dir}/history.html and {output_dir}/history.md")
+
+
 def cmd_dump(args):
     """Dump latest snapshot content to .md files in a directory."""
     conn = init_db()
@@ -1000,6 +1127,7 @@ def build_parser() -> argparse.ArgumentParser:
   %(prog)s history URL                  show history for one page
   %(prog)s diff URL                     show diff between last two snapshots of a page
   %(prog)s urls                         list all 56 tracked URLs with status
+  %(prog)s rebuild-history               regenerate history files from DB
   %(prog)s dump                         export latest snapshots to data/pages/
   %(prog)s dump ~/review                export to a custom directory""",
     )
@@ -1058,6 +1186,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="List all monitored URLs with latest fetch status",
     )
 
+    # rebuild-history
+    rebuild_p = sub.add_parser(
+        "rebuild-history",
+        help="Rebuild history.html and history.md from all stored snapshots",
+    )
+    rebuild_p.add_argument(
+        "--report", metavar="DIR",
+        help="Override report output directory (default: data/)",
+    )
+    rebuild_p.add_argument(
+        "--include-html", action="store_true",
+        help="Include diffs that are predominantly HTML/script noise",
+    )
+
     # dump
     dump_p = sub.add_parser(
         "dump",
@@ -1096,6 +1238,8 @@ def main():
         cmd_diff(args)
     elif args.command == "urls":
         cmd_urls(args)
+    elif args.command == "rebuild-history":
+        cmd_rebuild_history(args)
     elif args.command == "dump":
         cmd_dump(args)
 

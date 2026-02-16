@@ -87,6 +87,16 @@ python claude_docs_monitor.py dump /some/other/dir  # custom directory
 
 Exports latest snapshots from SQLite as `.md` files. No network calls — reads from database only.
 
+### rebuild-history
+
+```bash
+python claude_docs_monitor.py rebuild-history                  # default output to data/
+python claude_docs_monitor.py rebuild-history --report ~/out   # custom directory
+python claude_docs_monitor.py rebuild-history --include-html   # include HTML noise diffs
+```
+
+Regenerates `history.html` and `history.md` from all stored snapshots in the database. Walks through every run chronologically, reconstructs diffs between consecutive snapshots, and writes a complete cumulative history. Useful if history files were deleted or to backfill after upgrading.
+
 ## Common Workflows
 
 **Daily check (typical use):**

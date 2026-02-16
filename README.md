@@ -38,6 +38,7 @@ python claude_docs_monitor.py check --include-html     # include HTML-noise diff
 python claude_docs_monitor.py history              # browse snapshot history
 python claude_docs_monitor.py diff URL             # diff last two snapshots of a page
 python claude_docs_monitor.py urls                 # list all tracked URLs
+python claude_docs_monitor.py rebuild-history      # regenerate history files from all stored snapshots
 python claude_docs_monitor.py dump ~/review        # export .md files from DB (no network)
 ```
 

@@ -20,6 +20,7 @@ The index itself is tracked too — if Anthropic adds or removes a doc page, tha
 
 <img width="1065" height="706" alt="image" src="https://github.com/user-attachments/assets/32f56bd4-701c-48ca-acaa-6b1609c47402" />
 
+
 <img width="974" height="53" alt="image" src="https://github.com/user-attachments/assets/5256c977-1fec-46f0-949e-4bbcd9cac0da" />
 
 <img width="560" height="54" alt="image" src="https://github.com/user-attachments/assets/f5a255fe-2fb4-4da7-b52f-2e33c40dec2a" />

@@ -382,41 +382,72 @@ def generate_md_report(report_data: dict, output_dir: Path):
     (output_dir / "report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def generate_html_report(report_data: dict, output_dir: Path):
-    """Write a self-contained HTML report to output_dir/report.html."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    def esc(text: str) -> str:
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    css = """\
+_HTML_CSS = """\
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-       max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #24292e; }
+       max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #24292e; line-height: 1.5; }
 h1 { border-bottom: 1px solid #e1e4e8; padding-bottom: .3em; }
-h2 { margin-top: 1.5em; }
+h2 { margin-top: 1.5em; border-bottom: 1px solid #eaecef; padding-bottom: .2em; }
 h3 { margin-top: 1.2em; }
+h4 { margin-top: 1em; }
 table { border-collapse: collapse; margin: 1em 0; }
 th, td { border: 1px solid #dfe2e5; padding: .4em .8em; text-align: left; }
 th { background: #f6f8fa; }
 td:last-child { text-align: right; }
 ul { padding-left: 1.4em; }
-pre { background: #f6f8fa; padding: 1em; overflow-x: auto; border-radius: 6px;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: .85em; }
-.add { background: #e6ffec; }
-.del { background: #ffebe9; }
-.hunk { color: #6a737d; }
-.ts { color: #6a737d; font-size: .85em; }"""
+.ts { color: #6a737d; font-size: .85em; }
+hr { border: none; border-top: 2px solid #e1e4e8; margin: 2em 0; }
+.diff { border: 1px solid #d0d7de; border-radius: 6px; margin: 1em 0; overflow-x: auto; }
+.diff-line { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+             font-size: .85em; padding: 1px 10px; white-space: pre-wrap; word-wrap: break-word;
+             border-left: 3px solid transparent; }
+.diff-line.add { background: #e6ffec; border-left-color: #2da44e; }
+.diff-line.del { background: #ffebe9; border-left-color: #cf222e; }
+.diff-line.hunk { background: #ddf4ff; color: #0969da; border-left-color: #54aeff;
+                  padding-top: 4px; padding-bottom: 4px; font-weight: 600; }
+.diff-line.ctx { background: #ffffff; color: #57606a; }
+.diff-header { background: #f6f8fa; padding: 8px 10px; font-family: "SFMono-Regular", Consolas,
+               "Liberation Mono", Menlo, monospace; font-size: .85em; font-weight: 600;
+               border-bottom: 1px solid #d0d7de; color: #24292e; }"""
+
+
+def _esc_html(text: str) -> str:
+    """HTML-escape special characters."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _render_diff_html(diff_text: str) -> str:
+    """Render a unified diff as GitHub-style HTML lines."""
+    parts = ['<div class="diff">']
+    for line in diff_text.splitlines():
+        escaped = _esc_html(line)
+        if line.startswith("+++") or line.startswith("---"):
+            parts.append(f'<div class="diff-header">{escaped}</div>')
+        elif line.startswith("+"):
+            parts.append(f'<div class="diff-line add">{escaped}</div>')
+        elif line.startswith("-"):
+            parts.append(f'<div class="diff-line del">{escaped}</div>')
+        elif line.startswith("@@"):
+            parts.append(f'<div class="diff-line hunk">{escaped}</div>')
+        else:
+            parts.append(f'<div class="diff-line ctx">{escaped}</div>')
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
+def generate_html_report(report_data: dict, output_dir: Path):
+    """Write a self-contained HTML report to output_dir/report.html."""
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     body_parts = [
-        f"<h1>Claude Docs Monitor Report</h1>",
-        f'<p class="ts">{esc(report_data["timestamp"])}</p>',
+        "<h1>Claude Docs Monitor Report</h1>",
+        f'<p class="ts">{_esc_html(report_data["timestamp"])}</p>',
     ]
 
     if report_data["first_run"]:
         body_parts.append(f"<p><strong>First run: {report_data['total']} pages snapshotted.</strong></p>")
         body_parts.append("<ul>")
         for url in report_data["urls"]:
-            body_parts.append(f"<li>{esc(url)}</li>")
+            body_parts.append(f"<li>{_esc_html(url)}</li>")
         body_parts.append("</ul>")
     else:
         body_parts.append("<table><tr><th>Metric</th><th>Count</th></tr>")
@@ -429,42 +460,32 @@ pre { background: #f6f8fa; padding: 1em; overflow-x: auto; border-radius: 6px;
         if report_data["added"]:
             body_parts.append("<h2>Added Pages</h2><ul>")
             for url in report_data["added"]:
-                body_parts.append(f"<li>{esc(url)}</li>")
+                body_parts.append(f"<li>{_esc_html(url)}</li>")
             body_parts.append("</ul>")
 
         if report_data["removed"]:
             body_parts.append("<h2>Removed Pages</h2><ul>")
             for url in report_data["removed"]:
-                body_parts.append(f"<li>{esc(url)}</li>")
+                body_parts.append(f"<li>{_esc_html(url)}</li>")
             body_parts.append("</ul>")
 
         if report_data["errors"]:
             body_parts.append("<h2>Errors</h2><ul>")
             for e in report_data["errors"]:
-                body_parts.append(f"<li><strong>{esc(e['url'])}</strong>: {esc(e['error'])}</li>")
+                body_parts.append(f"<li><strong>{_esc_html(e['url'])}</strong>: {_esc_html(e['error'])}</li>")
             body_parts.append("</ul>")
 
         if report_data["changes"]:
             body_parts.append("<h2>Diffs</h2>")
             for ch in report_data["changes"]:
-                body_parts.append(f"<h3>{esc(ch['url'])}</h3><pre>")
-                for line in ch["diff"].splitlines():
-                    escaped = esc(line)
-                    if line.startswith("+"):
-                        body_parts.append(f'<span class="add">{escaped}</span>')
-                    elif line.startswith("-"):
-                        body_parts.append(f'<span class="del">{escaped}</span>')
-                    elif line.startswith("@@"):
-                        body_parts.append(f'<span class="hunk">{escaped}</span>')
-                    else:
-                        body_parts.append(escaped)
-                body_parts.append("</pre>")
+                body_parts.append(f"<h3>{_esc_html(ch['url'])}</h3>")
+                body_parts.append(_render_diff_html(ch["diff"]))
 
     html = (
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>Claude Docs Monitor Report</title><style>{css}</style></head>"
-        f"<body>{''.join(body_parts)}</body></html>\n"
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+        f"<title>Claude Docs Monitor Report</title>\n<style>\n{_HTML_CSS}\n</style>\n</head>\n"
+        f"<body>\n{''.join(body_parts)}\n</body>\n</html>\n"
     )
     (output_dir / "report.html").write_text(html, encoding="utf-8")
 
@@ -513,16 +534,16 @@ def _build_md_entry(report_data: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _build_html_entry(report_data: dict, esc) -> str:
+def _build_html_entry(report_data: dict) -> str:
     """Build HTML fragment for one check run."""
     parts = [
-        f'<h2>{esc(report_data["timestamp"])}</h2>',
+        f'<h2>{_esc_html(report_data["timestamp"])}</h2>',
     ]
     if report_data["first_run"]:
         parts.append(f"<p><strong>First run: {report_data['total']} pages snapshotted.</strong></p>")
         parts.append("<ul>")
         for url in report_data["urls"]:
-            parts.append(f"<li>{esc(url)}</li>")
+            parts.append(f"<li>{_esc_html(url)}</li>")
         parts.append("</ul>")
     else:
         parts.append("<table><tr><th>Metric</th><th>Count</th></tr>")
@@ -535,38 +556,28 @@ def _build_html_entry(report_data: dict, esc) -> str:
         if report_data["added"]:
             parts.append("<h3>Added Pages</h3><ul>")
             for url in report_data["added"]:
-                parts.append(f"<li>{esc(url)}</li>")
+                parts.append(f"<li>{_esc_html(url)}</li>")
             parts.append("</ul>")
 
         if report_data["removed"]:
             parts.append("<h3>Removed Pages</h3><ul>")
             for url in report_data["removed"]:
-                parts.append(f"<li>{esc(url)}</li>")
+                parts.append(f"<li>{_esc_html(url)}</li>")
             parts.append("</ul>")
 
         if report_data["errors"]:
             parts.append("<h3>Errors</h3><ul>")
             for e in report_data["errors"]:
-                parts.append(f"<li><strong>{esc(e['url'])}</strong>: {esc(e['error'])}</li>")
+                parts.append(f"<li><strong>{_esc_html(e['url'])}</strong>: {_esc_html(e['error'])}</li>")
             parts.append("</ul>")
 
         if report_data["changes"]:
             parts.append("<h3>Diffs</h3>")
             for ch in report_data["changes"]:
-                parts.append(f"<h4>{esc(ch['url'])}</h4><pre>")
-                for line in ch["diff"].splitlines():
-                    escaped = esc(line)
-                    if line.startswith("+"):
-                        parts.append(f'<span class="add">{escaped}</span>')
-                    elif line.startswith("-"):
-                        parts.append(f'<span class="del">{escaped}</span>')
-                    elif line.startswith("@@"):
-                        parts.append(f'<span class="hunk">{escaped}</span>')
-                    else:
-                        parts.append(escaped)
-                parts.append("</pre>")
+                parts.append(f"<h4>{_esc_html(ch['url'])}</h4>")
+                parts.append(_render_diff_html(ch["diff"]))
 
-    return "".join(parts)
+    return "\n".join(parts)
 
 
 def append_md_history(report_data: dict, output_dir: Path):
@@ -588,29 +599,7 @@ def append_html_history(report_data: dict, output_dir: Path):
     """Append a new entry to output_dir/history.html."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    def esc(text: str) -> str:
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    css = """\
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-       max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #24292e; }
-h1 { border-bottom: 1px solid #e1e4e8; padding-bottom: .3em; }
-h2 { border-bottom: 1px solid #eaecef; padding-bottom: .2em; margin-top: 2em; }
-h3 { margin-top: 1.2em; }
-h4 { margin-top: 1em; }
-table { border-collapse: collapse; margin: 1em 0; }
-th, td { border: 1px solid #dfe2e5; padding: .4em .8em; text-align: left; }
-th { background: #f6f8fa; }
-td:last-child { text-align: right; }
-ul { padding-left: 1.4em; }
-pre { background: #f6f8fa; padding: 1em; overflow-x: auto; border-radius: 6px;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: .85em; }
-.add { background: #e6ffec; }
-.del { background: #ffebe9; }
-.hunk { color: #6a737d; }
-hr { border: none; border-top: 2px solid #e1e4e8; margin: 2em 0; }"""
-
-    entry = _build_html_entry(report_data, esc)
+    entry = _build_html_entry(report_data)
     history_path = output_dir / "history.html"
 
     if history_path.exists():
@@ -623,10 +612,10 @@ hr { border: none; border-top: 2px solid #e1e4e8; margin: 2em 0; }"""
 
     # Create new file
     html = (
-        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>Claude Docs Monitor History</title><style>{css}</style></head>"
-        f"<body><h1>Claude Docs Monitor History</h1>{entry}</body></html>\n"
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+        f"<title>Claude Docs Monitor History</title>\n<style>\n{_HTML_CSS}\n</style>\n</head>\n"
+        f"<body>\n<h1>Claude Docs Monitor History</h1>\n{entry}\n</body>\n</html>\n"
     )
     history_path.write_text(html, encoding="utf-8")
 

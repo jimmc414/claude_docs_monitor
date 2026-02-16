@@ -18,6 +18,9 @@ Claude Code ships documentation updates without a changelog or RSS feed. If you'
 
 The index itself is tracked too — if Anthropic adds or removes a doc page, that shows up in the report.
 
+<img width="1065" height="706" alt="image" src="https://github.com/user-attachments/assets/32f56bd4-701c-48ca-acaa-6b1609c47402" />
+
+
 ## Setup
 
 ```

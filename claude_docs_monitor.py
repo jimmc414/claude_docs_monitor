@@ -177,6 +177,24 @@ def parse_index(content: str) -> list[str]:
     return urls
 
 
+def is_html_diff(diff_text: str) -> bool:
+    """Return True if a diff is predominantly HTML/script noise."""
+    changed = [l for l in diff_text.splitlines()
+               if l.startswith("+") or l.startswith("-")]
+    if len(changed) < 2:
+        return False
+    html_count = sum(1 for l in changed if re.search(
+        r'<(script|meta|link|button|svg|path|div|span|ul|li|form|input|textarea)\b|'
+        r'data-(target|action|view|turbo|pjax)|'
+        r'class="[A-Z]|'
+        r'id="(icon-button|tooltip|item|action-menu|validation|query-builder|custom-)|'
+        r'data-csrf|'
+        r'content="v2:[0-9a-f]|'
+        r'aria-label(led)?=',
+        l, re.IGNORECASE))
+    return html_count / len(changed) > 0.5
+
+
 def compute_diff(old_content: str, new_content: str, url: str) -> str:
     """Compute unified diff between two versions."""
     old_lines = normalize(old_content).splitlines(keepends=True)
@@ -735,7 +753,28 @@ async def cmd_check(args):
 
     conn.commit()
 
-    # Step 4: Display report
+    # Step 4: Filter HTML noise unless --include-html
+    include_html = getattr(args, "include_html", False)
+    if not include_html and changes:
+        filtered = []
+        skipped = []
+        for ch in changes:
+            if ch["diff"] and is_html_diff(ch["diff"]):
+                skipped.append(ch["url"])
+            else:
+                filtered.append(ch)
+        if skipped:
+            if HAS_RICH:
+                console.print(f"\n[dim]Suppressed {len(skipped)} HTML-noise diff(s): "
+                              f"{', '.join(url.rsplit('/', 1)[-1] for url in skipped)}[/dim]")
+                console.print("[dim]Use --include-html to show all diffs[/dim]")
+            else:
+                print(f"\nSuppressed {len(skipped)} HTML-noise diff(s): "
+                      f"{', '.join(url.rsplit('/', 1)[-1] for url in skipped)}")
+                print("Use --include-html to show all diffs")
+        changes = filtered
+
+    # Step 5: Display report
     added_urls_display = added_urls_index if not first_run else []
     removed_urls_display = removed_urls_index if not first_run else []
     quiet = getattr(args, "quiet", False)
@@ -994,6 +1033,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--report", metavar="DIR",
         help="Override report output directory (default: data/)",
     )
+    check_p.add_argument(
+        "--include-html", action="store_true",
+        help="Include diffs that are predominantly HTML/script noise (suppressed by default)",
+    )
 
     # history
     hist_p = sub.add_parser(
@@ -1040,6 +1083,7 @@ def main():
         args.quiet = False
         args.dump = None
         args.report = None
+        args.include_html = False
 
     if args.command == "check":
         if args.poll:

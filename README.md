@@ -62,6 +62,26 @@ The skill stores data at `~/.local/share/claude-docs-monitor/` and auto-installs
 
 First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
 
+### Ask docs
+
+An `/ask-docs` skill is also included. It answers questions about Claude Code by searching the locally cached documentation pages (stored in `data/pages/`), citing sources and noting cache freshness.
+
+**Install:**
+
+```bash
+cp .claude/commands/ask-docs.md ~/.claude/commands/
+```
+
+Then ask questions directly in any Claude Code session from this project:
+
+```
+/ask-docs how do hooks work?
+/ask-docs what are the sandboxing options?
+/ask-docs how to configure MCP servers?
+```
+
+The skill greps the cached docs for relevant pages, reads the top matches, and synthesizes an answer — no network calls needed. Run `/check-docs` first to ensure the local cache is up to date.
+
 ## Reports
 
 Every `check` run generates four report files in `data/` (override with `--report DIR`):

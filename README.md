@@ -34,6 +34,7 @@ python claude_docs_monitor.py check --quiet        # summary table only
 python claude_docs_monitor.py check --poll 3600    # re-check every hour
 python claude_docs_monitor.py check --save-diffs out/
 python claude_docs_monitor.py check --report ~/reports  # write reports to custom dir
+python claude_docs_monitor.py check --include-html     # include HTML-noise diffs (suppressed by default)
 python claude_docs_monitor.py history              # browse snapshot history
 python claude_docs_monitor.py diff URL             # diff last two snapshots of a page
 python claude_docs_monitor.py urls                 # list all tracked URLs
@@ -95,7 +96,7 @@ The `history.html` and `history.md` files grow over time, accumulating every run
 
 ## Limitations
 
-- Some pages (notably the changelog) embed dynamic content like CSRF tokens and request IDs that cause false-positive diffs on every run. These are real differences in the fetched content, not bugs, but they are noise.
+- Some pages (notably the changelog) embed dynamic content like CSRF tokens and request IDs that cause false-positive diffs on every run. These diffs are suppressed by default — use `--include-html` to see them.
 - The tool fetches rendered markdown from the docs site. If the site serves different content based on headers or cookies, you'll get whatever an unauthenticated `httpx` client gets.
 - No notification system. Pipe it into whatever you already use.
 

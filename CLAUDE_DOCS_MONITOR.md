@@ -48,6 +48,7 @@ python claude_docs_monitor.py check [OPTIONS]
 | `--save-diffs DIR` | Write `.diff` files per changed page to DIR |
 | `--dump DIR` | Override local page dump directory (default: `data/pages`) |
 | `--report DIR` | Override report output directory (default: `data/`) |
+| `--include-html` | Include diffs that are predominantly HTML/script noise (suppressed by default) |
 | `--poll SEC` | Re-run every SEC seconds (e.g. `--poll 3600` for hourly) |
 
 First run snapshots all pages as baseline (no diffs). Subsequent runs compare against previous snapshots.

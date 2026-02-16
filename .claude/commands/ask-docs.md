@@ -1,6 +1,7 @@
 ---
 description: Answer questions about Claude Code using locally cached documentation
 allowed-tools: Bash, Read, Grep, Glob
+argument-hint: [question about Claude Code]
 ---
 
 # Ask Docs

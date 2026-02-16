@@ -1,6 +1,7 @@
 ---
 description: Run Claude docs monitor — fetch all pages, detect changes, generate reports
 allowed-tools: Bash, Read
+argument-hint: [--quiet] [--report DIR] [--poll SEC]
 ---
 
 # Check Claude Docs

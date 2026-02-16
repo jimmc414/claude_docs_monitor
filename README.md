@@ -91,8 +91,6 @@ Every `check` run generates four report files in `data/` (override with `--repor
 
 Reports include a summary table (changed/added/removed/errors) and per-page unified diffs showing the exact text that was added, removed, or modified — the actual wording changes, not just a flag that something changed. The HTML versions are self-contained with inline CSS and syntax-highlighted diffs (green for additions, red for removals). First run produces a "pages snapshotted" baseline.
 
-<img width="1032" height="693" alt="image" src="https://github.com/user-attachments/assets/4d88fdf6-e47f-4d07-ab74-03cb56483619" />
-
 
 ## What gets stored
 

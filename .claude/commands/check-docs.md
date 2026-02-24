@@ -51,9 +51,35 @@ python -c "import httpx" 2>/dev/null || pip install "httpx[http2]>=0.27,<1.0"
 cd ~/.local/share/claude-docs-monitor && python ~/.claude/lib/claude_docs_monitor.py $ARGUMENTS
 ```
 
-### Step 4: Summarize
+### Step 4: Copy outputs to project directory
 
-After the command completes, read `~/.local/share/claude-docs-monitor/data/report.md` (first 30 lines) and present a brief summary to the user highlighting:
+After the monitor finishes, copy all output files to the project working directory:
+
+```bash
+cp -r ~/.local/share/claude-docs-monitor/data/* /mnt/c/python/claude_docs_monitor/
+```
+
+This ensures `pages/`, `report.md`, `report.html`, `history.md`, `history.html`, and `snapshots.db` are always up to date in the project directory.
+
+### Step 4.5: Generate AI digest (if changes detected)
+
+Read the first 15 lines of `/mnt/c/python/claude_docs_monitor/report.md`. If the report shows any changes (Changed > 0, Added > 0, or Removed > 0), run the AI digest:
+
+```bash
+cd ~/.local/share/claude-docs-monitor && python ~/.claude/lib/claude_docs_monitor.py digest
+```
+
+Then copy the digest outputs:
+
+```bash
+cp ~/.local/share/claude-docs-monitor/data/digest.* /mnt/c/python/claude_docs_monitor/ 2>/dev/null || true
+```
+
+If no changes were detected, skip this step.
+
+### Step 5: Summarize
+
+After the command completes, read `/mnt/c/python/claude_docs_monitor/report.md` (first 30 lines) and present a brief summary to the user highlighting:
 - Number of changed/added/removed pages
 - Which specific pages changed (if any)
 - Any errors encountered

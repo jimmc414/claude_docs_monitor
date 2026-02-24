@@ -9,8 +9,11 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -1078,6 +1081,188 @@ def cmd_dump(args):
         print(f"Dumped {written} pages to {out_dir}/")
 
 
+# ── AI Digest ─────────────────────────────────────────────────────────────
+
+_DIGEST_PROMPT = """\
+Analyze these Claude Code documentation diffs and produce a concise change digest.
+
+## Format your response exactly as:
+
+### Executive Summary
+2-3 sentences on what changed and why it matters.
+
+### New Features
+- Feature name: one-line description
+
+### Breaking Changes
+- What changed and what to do about it
+
+### Deprecations
+- What's being phased out
+
+### Flag & API Changes
+- New/renamed/removed CLI flags or settings
+
+### Notable Clarifications
+- Documentation improvements worth knowing about
+
+### Action Items
+- [ ] Specific things to update in your workflows
+
+Omit any section that has no items. Be concise — bullet points, not paragraphs.
+
+## Diffs to analyze:
+
+{diffs}
+"""
+
+
+def _generate_digest_html(digest_md: str, output_dir: Path):
+    """Write a self-contained HTML digest to output_dir/digest.html."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Convert markdown to simple HTML
+    body_lines = []
+    in_list = False
+    for line in digest_md.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("### "):
+            if in_list:
+                body_lines.append("</ul>")
+                in_list = False
+            body_lines.append(f"<h3>{_esc_html(stripped[4:])}</h3>")
+        elif stripped.startswith("## "):
+            if in_list:
+                body_lines.append("</ul>")
+                in_list = False
+            body_lines.append(f"<h2>{_esc_html(stripped[3:])}</h2>")
+        elif stripped.startswith("- [ ] "):
+            if not in_list:
+                body_lines.append("<ul>")
+                in_list = True
+            body_lines.append(f"<li><input type='checkbox' disabled> {_esc_html(stripped[6:])}</li>")
+        elif stripped.startswith("- "):
+            if not in_list:
+                body_lines.append("<ul>")
+                in_list = True
+            body_lines.append(f"<li>{_esc_html(stripped[2:])}</li>")
+        elif stripped:
+            if in_list:
+                body_lines.append("</ul>")
+                in_list = False
+            body_lines.append(f"<p>{_esc_html(stripped)}</p>")
+    if in_list:
+        body_lines.append("</ul>")
+
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    html = (
+        "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+        f"<title>Claude Docs Change Digest</title>\n<style>\n{_HTML_CSS}\n</style>\n</head>\n"
+        f"<body>\n<h1>Claude Docs Change Digest</h1>\n"
+        f'<p class="ts">{_esc_html(ts)}</p>\n'
+        f"{''.join(body_lines)}\n</body>\n</html>\n"
+    )
+    (output_dir / "digest.html").write_text(html, encoding="utf-8")
+
+
+def cmd_digest(args):
+    """AI-analyze latest diffs into an actionable digest."""
+    report_dir = Path(args.report) if args.report else DB_DIR
+    report_path = report_dir / "report.md"
+
+    if not report_path.exists():
+        print("No report found. Run 'check' first to generate a report.")
+        sys.exit(1)
+
+    report_text = report_path.read_text(encoding="utf-8")
+
+    # Check for no changes
+    if "| Changed | 0 |" in report_text and "| Added | 0 |" in report_text:
+        print("No changes to digest.")
+        return
+
+    # Extract diffs section to minimize token usage
+    diffs_marker = "\n## Diffs\n"
+    if diffs_marker in report_text:
+        diffs = report_text[report_text.index(diffs_marker) + len(diffs_marker):]
+    else:
+        # No diffs section — might be added/removed pages only
+        diffs = report_text
+
+    if not diffs.strip():
+        print("No diffs found in report.")
+        return
+
+    # Check that claude CLI is available
+    if not shutil.which("claude"):
+        print("Error: 'claude' CLI not found in PATH.")
+        print("Install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
+        sys.exit(1)
+
+    prompt = _DIGEST_PROMPT.format(diffs=diffs)
+
+    model = getattr(args, "model", "sonnet")
+
+    if HAS_RICH:
+        console.print("[bold blue]Generating AI digest...[/bold blue]")
+    else:
+        print("Generating AI digest...")
+
+    # Allow running inside a Claude Code session (nested invocation)
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--model", model,
+             "--max-turns", "1", "--output-format", "text"],
+            capture_output=True, text=True, timeout=120, env=env,
+        )
+    except subprocess.TimeoutExpired:
+        print("Error: claude CLI timed out after 120 seconds.")
+        sys.exit(1)
+    except FileNotFoundError:
+        print("Error: 'claude' CLI not found.")
+        sys.exit(1)
+
+    if result.returncode != 0:
+        print(f"Error: claude CLI exited with code {result.returncode}")
+        if result.stderr:
+            print(result.stderr[:500])
+        sys.exit(1)
+
+    digest_text = result.stdout.strip()
+    if not digest_text:
+        print("Error: claude CLI returned empty output.")
+        sys.exit(1)
+
+    # Write outputs
+    report_dir.mkdir(parents=True, exist_ok=True)
+    digest_md_path = report_dir / "digest.md"
+    digest_md_path.write_text(
+        f"# Claude Docs Change Digest\n\n"
+        f"*Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*\n\n"
+        f"{digest_text}\n",
+        encoding="utf-8",
+    )
+
+    _generate_digest_html(digest_text, report_dir)
+
+    # Print to terminal
+    if HAS_RICH:
+        console.print()
+        console.print(Panel(digest_text, title="Change Digest", border_style="green"))
+    else:
+        print()
+        print("=" * 60)
+        print("CHANGE DIGEST")
+        print("=" * 60)
+        print(digest_text)
+        print("=" * 60)
+
+    print(f"\nDigest written to {digest_md_path} and {report_dir / 'digest.html'}")
+
+
 def cmd_urls(args):
     """List all monitored URLs with latest status."""
     conn = init_db()
@@ -1129,7 +1314,9 @@ def build_parser() -> argparse.ArgumentParser:
   %(prog)s urls                         list all tracked URLs with status
   %(prog)s rebuild-history               regenerate history files from DB
   %(prog)s dump                         export latest snapshots to data/pages/
-  %(prog)s dump ~/review                export to a custom directory""",
+  %(prog)s dump ~/review                export to a custom directory
+  %(prog)s digest                       AI-analyze latest diffs into an actionable digest
+  %(prog)s digest --model opus          use a different model for analysis""",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -1210,6 +1397,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output directory (default: data/pages)",
     )
 
+    # digest
+    digest_p = sub.add_parser(
+        "digest",
+        help="AI-analyze latest diffs into an actionable digest",
+    )
+    digest_p.add_argument(
+        "--report", metavar="DIR",
+        help="Report directory (default: data/)",
+    )
+    digest_p.add_argument(
+        "--model", default="sonnet",
+        help="Model alias (default: sonnet)",
+    )
+
     return parser
 
 
@@ -1242,6 +1443,8 @@ def main():
         cmd_rebuild_history(args)
     elif args.command == "dump":
         cmd_dump(args)
+    elif args.command == "digest":
+        cmd_digest(args)
 
 
 if __name__ == "__main__":

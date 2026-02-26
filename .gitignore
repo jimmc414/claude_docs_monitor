@@ -103,5 +103,6 @@ venv
 # Demo folder (local testing)
 demo/
 
-# Snapshot database
+# Snapshot database (binary, grows with each run)
+snapshots.db
 data/

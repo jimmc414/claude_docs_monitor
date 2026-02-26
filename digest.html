@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Docs Change Digest</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+       max-width: 960px; margin: 2rem auto; padding: 0 1rem; color: #24292e; line-height: 1.5; }
+h1 { border-bottom: 1px solid #e1e4e8; padding-bottom: .3em; }
+h2 { margin-top: 1.5em; border-bottom: 1px solid #eaecef; padding-bottom: .2em; }
+h3 { margin-top: 1.2em; }
+h4 { margin-top: 1em; }
+table { border-collapse: collapse; margin: 1em 0; }
+th, td { border: 1px solid #dfe2e5; padding: .4em .8em; text-align: left; }
+th { background: #f6f8fa; }
+td:last-child { text-align: right; }
+ul { padding-left: 1.4em; }
+.ts { color: #6a737d; font-size: .85em; }
+hr { border: none; border-top: 2px solid #e1e4e8; margin: 2em 0; }
+.diff { border: 1px solid #d0d7de; border-radius: 6px; margin: 1em 0; overflow-x: auto; }
+.diff-line { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+             font-size: .85em; padding: 1px 10px; white-space: pre-wrap; word-wrap: break-word;
+             border-left: 3px solid transparent; }
+.diff-line.add { background: #e6ffec; border-left-color: #2da44e; }
+.diff-line.del { background: #ffebe9; border-left-color: #cf222e; }
+.diff-line.hunk { background: #ddf4ff; color: #0969da; border-left-color: #54aeff;
+                  padding-top: 4px; padding-bottom: 4px; font-weight: 600; }
+.diff-line.ctx { background: #ffffff; color: #57606a; }
+.diff-header { background: #f6f8fa; padding: 8px 10px; font-family: "SFMono-Regular", Consolas,
+               "Liberation Mono", Menlo, monospace; font-size: .85em; font-weight: 600;
+               border-bottom: 1px solid #d0d7de; color: #24292e; }
+</style>
+</head>
+<body>
+<h1>Claude Docs Change Digest</h1>
+<p class="ts">2026-02-26 20:49 UTC</p>
+<h3>Executive Summary</h3><p>This release adds non-git VCS support for worktrees via new hooks, a Remote Control feature for controlling local Claude from a browser, and several new managed settings for enterprise control. The `&amp;` prefix for web sessions has been replaced by `claude --remote`, and auto memory is now enabled by default.</p><h3>New Features</h3><ul><li>**WorktreeCreate/WorktreeRemove hooks**: Replace default git worktree behavior with custom VCS logic (SVN, Perforce, Mercurial)</li><li>**Subagent worktrees**: Subagents support `isolation: worktree` in frontmatter for parallel work without conflicts</li><li>**Remote Control**: `claude remote-control` lets you control a local Claude process from the web UI or mobile app</li><li>**`claude agents` command**: List all configured subagents grouped by source without starting a session</li><li>**`claude auth` subcommands**: `login`, `logout`, and `status` for scripted auth management</li><li>**npm plugin packages**: npm source for plugins is now fully implemented (previously marked "not yet implemented")</li><li>**`autoMemoryEnabled` setting**: Control auto memory per-project or user via `settings.json`; auto memory is now **on by default**</li><li>**MDM/OS-level managed settings**: macOS plist (`com.anthropic.claudecode`) and Windows registry (`HKLM\SOFTWARE\Policies\ClaudeCode`) support for managed settings</li><li>**Agent team size guidance**: 3–5 teammates recommended; new "Choose an appropriate team size" section with cost/coordination tradeoffs</li><li>**`/rename` auto-generates names**: Omit the name argument to generate one from conversation history</li><li>**`/copy` code block picker**: When code blocks are present, shows an interactive picker to copy individual blocks or the full response</li><li>**`CLAUDE_CODE_DISABLE_1M_CONTEXT`**: Env var to disable 1M context window support (for compliance)</li><li>**`CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS`**: Configurable timeout for plugin git operations (default 120s)</li><li>**SDK account env vars**: `CLAUDE_CODE_ACCOUNT_UUID`, `CLAUDE_CODE_USER_EMAIL`, `CLAUDE_CODE_ORGANIZATION_UUID` for SDK callers to avoid telemetry race conditions</li></ul><h3>Breaking Changes</h3><ul><li>**`&amp;` prefix for web sessions removed**: The `&amp; Fix the bug` in-session syntax is gone. Use `claude --remote "Fix the bug"` from the command line instead. Update any scripts or habits using the `&amp;` prefix.</li><li>**`/path` permissions now relative to project root**: A rule like `Edit(/src/**)` resolves to `&lt;project root&gt;/src/**`, not `&lt;settings file path&gt;/src/**`. Review existing permission rules that use leading `/`.</li></ul><h3>Deprecations</h3><ul><li>**npm installation**: Continues deprecation. Migrate with `curl -fsSL https://claude.ai/install.sh | bash &amp;&amp; npm uninstall -g @anthropic-ai/claude-code`</li><li>**`DISABLE_AUTOUPDATER` shell export**: Documentation now shows the preferred way as `{"env": {"DISABLE_AUTOUPDATER": "1"}}` in `settings.json`</li></ul><h3>Flag &amp; API Changes</h3><ul><li>**New managed-only settings**: `allowManagedMcpServersOnly`, `blockedMarketplaces`, `sandbox.network.allowManagedDomainsOnly`, `allow_remote_sessions`</li><li>**`--worktree` now primary form**: `-w` still works as alias; docs now show `--worktree` as the canonical flag</li><li>**Background subagents**: MCP tools restriction removed — background subagents can now use MCP tools</li><li>**Managed settings precedence within tier**: server-managed &gt; MDM/OS policies &gt; `managed-settings.json` &gt; HKCU registry; sources do not merge, only one is used</li></ul><h3>Notable Clarifications</h3><ul><li>**Windows requires Git for Windows**: Now prominently documented across install, quickstart, and overview pages; required for native Windows (not just optional)</li><li>**`/status` shows settings sources**: Reports which managed settings layer is active (`remote`, `plist`, `HKLM`, or `file`)</li><li>**Managed settings precedence**: When server-managed and endpoint-managed are both present, server-managed wins and endpoint-managed is entirely ignored</li><li>**Troubleshooting guide massively expanded**: Now includes a quick-lookup error table and detailed sections for each install error (OOM, TLS, musl/glibc mismatch, Docker hangs, etc.)</li><li>**setup.md retitled "Advanced setup"**: First-run content moved to quickstart; setup page now focused on system requirements, version management, and uninstall</li><li>**Remote Control data flow**: Clarified as local execution — no cloud VMs involved, all data stays on your machine</li></ul><h3>Action Items</h3><ul><li><input type='checkbox' disabled> Replace any `&amp; &lt;task&gt;` usage in scripts/habits with `claude --remote "&lt;task&gt;"`</li><li><input type='checkbox' disabled> Audit permission rules using `/path` patterns — they now resolve to project root, not settings file location</li><li><input type='checkbox' disabled> If using non-git VCS with worktrees, configure `WorktreeCreate`/`WorktreeRemove` hooks</li><li><input type='checkbox' disabled> Windows users: ensure Git for Windows is installed before running Claude Code</li><li><input type='checkbox' disabled> Enterprise admins: review new managed settings (`allowManagedMcpServersOnly`, `blockedMarketplaces`, `allow_remote_sessions`, `sandbox.network.allowManagedDomainsOnly`)</li><li><input type='checkbox' disabled> If auto memory should be off, add `{"autoMemoryEnabled": false}` to `settings.json` (it's now on by default)</li><li><input type='checkbox' disabled> Verify Homebrew installs do periodic `brew cleanup claude-code` to reclaim disk space from old versions</li></ul>
+</body>
+</html>

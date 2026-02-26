@@ -1083,10 +1083,10 @@ def cmd_dump(args):
 
 # ── AI Digest ─────────────────────────────────────────────────────────────
 
-_DIGEST_PROMPT = """\
-Analyze these Claude Code documentation diffs and produce a concise change digest.
+_DIGEST_INSTRUCTION = """\
+Analyze the Claude Code documentation diffs provided on stdin and produce a concise change digest.
 
-## Format your response exactly as:
+Format your response exactly as:
 
 ### Executive Summary
 2-3 sentences on what changed and why it matters.
@@ -1109,12 +1109,7 @@ Analyze these Claude Code documentation diffs and produce a concise change diges
 ### Action Items
 - [ ] Specific things to update in your workflows
 
-Omit any section that has no items. Be concise — bullet points, not paragraphs.
-
-## Diffs to analyze:
-
-{diffs}
-"""
+Omit any section that has no items. Be concise — bullet points, not paragraphs."""
 
 
 def _generate_digest_html(digest_md: str, output_dir: Path):
@@ -1200,7 +1195,7 @@ def cmd_digest(args):
         print("Install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
         sys.exit(1)
 
-    prompt = _DIGEST_PROMPT.format(diffs=diffs)
+    stdin_text = f"## Diffs to analyze:\n\n{diffs}"
 
     model = getattr(args, "model", "sonnet")
 
@@ -1214,12 +1209,13 @@ def cmd_digest(args):
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--model", model,
+            ["claude", "-p", _DIGEST_INSTRUCTION, "--model", model,
              "--max-turns", "1", "--output-format", "text"],
-            capture_output=True, text=True, timeout=120, env=env,
+            input=stdin_text,
+            capture_output=True, text=True, timeout=300, env=env,
         )
     except subprocess.TimeoutExpired:
-        print("Error: claude CLI timed out after 120 seconds.")
+        print("Error: claude CLI timed out after 300 seconds.")
         sys.exit(1)
     except FileNotFoundError:
         print("Error: 'claude' CLI not found.")

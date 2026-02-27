@@ -25,6 +25,8 @@ Required: Python 3.10+, `httpx`. Optional: `rich` (colored output, progress bars
 | `data/report.md` | Markdown report (overwritten each run) |
 | `data/history.html` | Cumulative HTML report (appended each run) |
 | `data/history.md` | Cumulative Markdown report (appended each run) |
+| `data/digest.html` | AI-generated change digest (overwritten each run) |
+| `data/digest.md` | AI-generated change digest (overwritten each run) |
 
 ## Commands
 
@@ -97,6 +99,21 @@ python claude_docs_monitor.py rebuild-history --include-html   # include HTML no
 
 Regenerates `history.html` and `history.md` from all stored snapshots in the database. Walks through every run chronologically, reconstructs diffs between consecutive snapshots, and writes a complete cumulative history. Useful if history files were deleted or to backfill after upgrading.
 
+### digest
+
+```bash
+python claude_docs_monitor.py digest                     # analyze latest diffs with sonnet
+python claude_docs_monitor.py digest --model opus        # use a different model
+python claude_docs_monitor.py digest --report ~/out      # read report from custom directory
+```
+
+| Flag | Effect |
+|------|--------|
+| `--model ALIAS` | Model to use for analysis (default: `sonnet`). Supports: `sonnet`, `opus`, `haiku` |
+| `--report DIR` | Report directory containing `report.md` (default: `data/`) |
+
+Reads `report.md`, extracts the `## Diffs` section, pipes it via stdin to `claude -p` with a structured analysis prompt. Generates `digest.md` and `digest.html` with: executive summary, new features, breaking changes, deprecations, flag & API changes, notable clarifications, and action items. Requires `claude` CLI installed and authenticated. Strips the `CLAUDECODE` env var to allow running inside a Claude Code session.
+
 ## Common Workflows
 
 **Daily check (typical use):**
@@ -128,6 +145,16 @@ python claude_docs_monitor.py diff https://code.claude.com/docs/en/hooks.md
 ```bash
 python claude_docs_monitor.py dump ~/claude-docs-review
 # then read files in ~/claude-docs-review/
+```
+
+**AI digest of latest changes:**
+```bash
+python claude_docs_monitor.py digest
+```
+
+**Check + digest in one shot (via slash command):**
+```
+/check-docs
 ```
 
 ## Output Behavior

@@ -41,8 +41,9 @@ python claude_docs_monitor.py                      # fetch, diff, update local f
 python claude_docs_monitor.py check --quiet        # summary table only
 python claude_docs_monitor.py check --poll 3600    # re-check every hour
 python claude_docs_monitor.py check --save-diffs out/
-python claude_docs_monitor.py check --report ~/reports  # write reports to custom dir
-python claude_docs_monitor.py check --include-html     # include HTML-noise diffs (suppressed by default)
+python claude_docs_monitor.py check --dump ~/docs         # dump pages to custom dir instead of data/pages/
+python claude_docs_monitor.py check --report ~/reports    # write reports to custom dir
+python claude_docs_monitor.py check --include-html       # include HTML-noise diffs (suppressed by default)
 python claude_docs_monitor.py history              # browse snapshot history
 python claude_docs_monitor.py diff URL             # diff last two snapshots of a page
 python claude_docs_monitor.py urls                 # list all tracked URLs

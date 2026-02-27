@@ -15,6 +15,7 @@ Claude Code ships documentation updates without a changelog or RSS feed. If you'
 5. Stores everything in SQLite (append-only, full history)
 6. Updates a local folder of `.md` files
 7. Generates HTML and Markdown reports (per-run snapshots + cumulative history)
+8. Optionally feeds diffs to `claude -p` to produce an AI-generated change digest
 
 The index itself is tracked too — if Anthropic adds or removes a doc page, that shows up in the report.
 
@@ -47,6 +48,8 @@ python claude_docs_monitor.py diff URL             # diff last two snapshots of 
 python claude_docs_monitor.py urls                 # list all tracked URLs
 python claude_docs_monitor.py rebuild-history      # regenerate history files from all stored snapshots
 python claude_docs_monitor.py dump ~/review        # export .md files from DB (no network)
+python claude_docs_monitor.py digest              # AI-analyze latest diffs into a change digest
+python claude_docs_monitor.py digest --model opus # use a different model
 ```
 
 Running with no arguments defaults to `check`.
@@ -55,14 +58,15 @@ Running with no arguments defaults to `check`.
 
 A standalone `/check-docs` slash command is included. It runs the monitor and summarizes the results directly in your Claude Code session — no need to clone the repo first.
 
-**Install (two files):**
+**Install:**
 
 ```bash
 cp .claude/commands/check-docs.md ~/.claude/commands/
+cp .claude/commands/digest.md ~/.claude/commands/
 cp claude_docs_monitor.py ~/.claude/lib/
 ```
 
-The skill stores data at `~/.local/share/claude-docs-monitor/` and auto-installs `httpx` if needed. After installing, just type `/check-docs` in any Claude Code session.
+The skills store data at `~/.local/share/claude-docs-monitor/` and auto-install `httpx` if needed. After installing, just type `/check-docs` in any Claude Code session. When changes are detected, it automatically generates an AI digest.
 
 First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
 
@@ -86,6 +90,30 @@ Then ask questions directly in any Claude Code session from this project:
 
 The skill greps the cached docs for relevant pages, reads the top matches, and synthesizes an answer — no network calls needed. Run `/check-docs` first to ensure the local cache is up to date.
 
+### Digest
+
+The `digest` subcommand feeds raw diffs to `claude -p` and generates an actionable intelligence briefing — executive summary, new features, breaking changes, deprecations, flag changes, and action items. It transforms 1400+ lines of unified diff into "here are the 5 things you need to know."
+
+```
+python claude_docs_monitor.py digest
+python claude_docs_monitor.py digest --model opus
+python claude_docs_monitor.py digest --report ~/reports
+```
+
+Run `check` first to generate a report, then `digest` to analyze it. The digest writes `data/digest.md` and `data/digest.html`.
+
+A `/digest` slash command is also included. It runs the digest and presents the results directly in your Claude Code session.
+
+**Install:**
+
+```bash
+cp .claude/commands/digest.md ~/.claude/commands/
+```
+
+The `/check-docs` skill automatically runs the digest when changes are detected, so you don't need to invoke it separately during a normal check.
+
+Requires the `claude` CLI to be installed and authenticated.
+
 ## Reports
 
 Every `check` run generates four report files in `data/` (override with `--report DIR`):
@@ -106,6 +134,8 @@ data/
   report.md       # Markdown report (latest run)
   history.html    # cumulative HTML report (appended each run)
   history.md      # cumulative Markdown report (appended each run)
+  digest.html     # AI-generated change digest (latest run)
+  digest.md       # AI-generated change digest (latest run)
 ```
 
 Two tables: `index_snapshots` (the llms.txt file itself) and `page_snapshots` (one row per fetch per URL). Append-only — every fetch is stored permanently, so you have a full history of every version of every page. You can query the database directly if you want something the CLI doesn't expose.

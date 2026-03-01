@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "docs-monitor": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "env": {
+        "DOCS_MONITOR_DB": "~/.local/share/claude-docs-monitor/data/snapshots.db"
+      }
+    }
+  }
+}

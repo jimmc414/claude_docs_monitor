@@ -16,6 +16,8 @@ Claude Code ships documentation updates without a changelog or RSS feed. If you'
 6. Updates a local folder of `.md` files
 7. Generates HTML and Markdown reports (per-run snapshots + cumulative history)
 8. Optionally feeds diffs to `claude -p` to produce an AI-generated change digest
+9. Classifies each change with AI (category, severity, summary) and stores structured events permanently
+10. Accumulated change intelligence is queryable by category, severity, page, keyword, or date range
 
 The index itself is tracked too — if Anthropic adds or removes a doc page, that shows up in the report.
 
@@ -51,6 +53,13 @@ python claude_docs_monitor.py rebuild-history      # regenerate history files fr
 python claude_docs_monitor.py dump ~/review        # export .md files from DB (no network)
 python claude_docs_monitor.py digest              # AI-analyze latest diffs into a change digest
 python claude_docs_monitor.py digest --model opus # use a different model
+python claude_docs_monitor.py digest --gh-issue   # also create GitHub issues for breaking changes
+python claude_docs_monitor.py query breaking       # query all breaking changes
+python claude_docs_monitor.py query --since 7d     # changes in the last 7 days
+python claude_docs_monitor.py query "hooks" --severity high  # keyword search with severity filter
+python claude_docs_monitor.py query --json | jq .  # machine-readable output
+python claude_docs_monitor.py backfill             # classify historical changes with AI
+python claude_docs_monitor.py backfill --dry-run   # preview what would be classified
 ```
 
 Running with no arguments defaults to `check`.
@@ -64,10 +73,11 @@ A standalone `/check-docs` slash command is included. It runs the monitor and su
 ```bash
 cp .claude/commands/check-docs.md ~/.claude/commands/
 cp .claude/commands/digest.md ~/.claude/commands/
+cp .claude/commands/query-docs.md ~/.claude/commands/
 cp claude_docs_monitor.py ~/.claude/lib/
 ```
 
-The skills store data at `~/.local/share/claude-docs-monitor/` and auto-install `httpx` if needed. After installing, just type `/check-docs` in any Claude Code session. When changes are detected, it automatically generates an AI digest.
+The skills store data at `~/.local/share/claude-docs-monitor/` and auto-install `httpx` if needed. After installing, just type `/check-docs` in any Claude Code session. When changes are detected, it automatically generates an AI digest and stores structured change events.
 
 First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
 
@@ -115,6 +125,98 @@ The `/check-docs` skill automatically runs the digest when changes are detected,
 
 Requires the `claude` CLI to be installed and authenticated.
 
+### Change intelligence
+
+Every `digest` run now also classifies each change with AI and stores the result permanently in SQLite. Each change event gets a category (`feature`, `breaking`, `deprecation`, `clarification`, `flag_change`, `bugfix`), severity (`high`, `medium`, `low`), a one-line summary, details, action items, and keyword tags. This data accumulates over time and is queryable.
+
+The `query` command searches the accumulated intelligence:
+
+```
+python claude_docs_monitor.py query breaking                     # all breaking changes ever
+python claude_docs_monitor.py query --since 7d                   # everything in the last 7 days
+python claude_docs_monitor.py query --severity high              # all high-severity events
+python claude_docs_monitor.py query "hooks"                      # keyword search across summaries, details, tags
+python claude_docs_monitor.py query --page hooks.md              # all events for a specific page
+python claude_docs_monitor.py query --category feature --since 30d  # new features in last month
+python claude_docs_monitor.py query --json | jq '.events[]'     # pipe to jq for processing
+```
+
+A `/query-docs` slash command is included. It runs the query and presents results directly in your Claude Code session.
+
+**Install:**
+
+```bash
+cp .claude/commands/query-docs.md ~/.claude/commands/
+```
+
+The `backfill` command populates the change intelligence database from existing snapshot history, so you don't lose the value of past runs:
+
+```
+python claude_docs_monitor.py backfill --dry-run   # preview what would be classified
+python claude_docs_monitor.py backfill             # classify all historical changes
+```
+
+### GitHub issues for breaking changes
+
+The `digest` command can automatically create GitHub issues for breaking changes:
+
+```
+python claude_docs_monitor.py digest --gh-issue
+python claude_docs_monitor.py digest --gh-issue --gh-repo owner/repo
+```
+
+Each breaking change gets an issue with the summary, details, action items, and tags. Requires the `gh` CLI to be authenticated.
+
+## MCP Server (optional)
+
+An optional MCP server (`mcp_server.py`) exposes the documentation intelligence database as tools and resources to any MCP client (Claude Code, Cursor, custom agents).
+
+The MCP server is **read-only** — it queries the SQLite database but never writes to it. You still need the CLI (or slash commands) to fetch docs (`check`), generate digests (`digest`), and classify changes (`backfill`). The typical workflow is:
+
+1. **Populate data** via CLI: `python claude_docs_monitor.py check` then `digest`
+2. **Query data** via MCP tools — or via CLI `query` command, slash commands, or direct SQL
+
+The MCP server is purely additive. Everything works without it.
+
+### Setup
+
+```bash
+pip install mcp                          # or: pip install -r requirements-mcp.txt
+claude mcp add docs-monitor -- python /path/to/mcp_server.py
+```
+
+Or use the project-scoped `.mcp.json` (already included — works automatically when opening this project in Claude Code).
+
+### Tools
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `query_changes` | Search AI-classified change events | `keyword?`, `category?`, `severity?`, `page?`, `since?`, `until?`, `limit?` |
+| `get_page_snapshots` | Snapshot history for a page or overview of all tracked URLs | `url?`, `limit?` |
+| `get_diff` | Unified diff between the two most recent snapshots | `url` (required) |
+| `search_pages` | Full-text search across latest cached doc pages | `keyword` (required), `limit?` |
+
+### Resources
+
+| URI | Returns |
+|-----|---------|
+| `docs://pages/{name}` | Latest cached content for a doc page (e.g. `docs://pages/hooks.md`) |
+| `docs://digest` | Latest AI-generated change digest |
+| `docs://report` | Latest check report (summary + diffs) |
+
+### Example queries (in an MCP client)
+
+Once configured, you can ask your MCP client things like:
+
+- "Use query_changes to find all breaking changes"
+- "Use search_pages to find mentions of permissions"
+- "Use get_diff to show the latest diff for hooks.md"
+- "Read the docs://digest resource to see the latest change analysis"
+
+### Configuration
+
+The server reads the SQLite database at `~/.local/share/claude-docs-monitor/data/snapshots.db` by default. Override with the `DOCS_MONITOR_DB` environment variable.
+
 ## Reports
 
 Every `check` run generates four report files in `data/` (override with `--report DIR`):
@@ -129,7 +231,7 @@ Reports include a summary table (changed/added/removed/errors) and per-page unif
 
 ```
 data/
-  snapshots.db    # SQLite: full history of every fetch
+  snapshots.db    # SQLite: full history of every fetch + change intelligence
   pages/          # latest .md files, updated every run
   report.html     # self-contained HTML report (latest run)
   report.md       # Markdown report (latest run)
@@ -139,7 +241,7 @@ data/
   digest.md       # AI-generated change digest (latest run)
 ```
 
-Two tables: `index_snapshots` (the llms.txt file itself) and `page_snapshots` (one row per fetch per URL). Append-only — every fetch is stored permanently, so you have a full history of every version of every page. You can query the database directly if you want something the CLI doesn't expose.
+Three tables: `index_snapshots` (the llms.txt file itself), `page_snapshots` (one row per fetch per URL), and `change_events` (AI-classified change metadata). All append-only — every fetch and classification is stored permanently. The `change_events` table accumulates structured intelligence over time: category, severity, summary, details, action items, and keyword tags for each change. You can query this data via the `query` command or directly in SQLite.
 
 The `history.html` and `history.md` files grow over time, accumulating every run's summary and diffs into a single scrollable document. This gives you a complete, human-readable changelog of all documentation changes without needing to query the database.
 

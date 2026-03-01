@@ -16,7 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from difflib import unified_diff
 from pathlib import Path
 
@@ -70,6 +70,27 @@ def init_db(db_path: Path = DB_PATH) -> sqlite3.Connection:
         );
         CREATE INDEX IF NOT EXISTS idx_page_url ON page_snapshots(url);
         CREATE INDEX IF NOT EXISTS idx_page_fetched ON page_snapshots(fetched_at);
+
+        CREATE TABLE IF NOT EXISTS change_events (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_timestamp   TEXT    NOT NULL,
+            url             TEXT    NOT NULL,
+            page_name       TEXT    NOT NULL,
+            event_type      TEXT    NOT NULL,
+            category        TEXT,
+            severity        TEXT,
+            summary         TEXT,
+            details         TEXT,
+            action_required TEXT,
+            tags_json       TEXT,
+            diff_text       TEXT,
+            gh_issue_url    TEXT,
+            created_at      TEXT    NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_ce_run ON change_events(run_timestamp);
+        CREATE INDEX IF NOT EXISTS idx_ce_url ON change_events(url);
+        CREATE INDEX IF NOT EXISTS idx_ce_category ON change_events(category);
+        CREATE INDEX IF NOT EXISTS idx_ce_severity ON change_events(severity);
     """)
     return conn
 
@@ -147,6 +168,76 @@ def get_all_tracked_urls(conn: sqlite3.Connection) -> list[dict]:
         ORDER BY p.url
     """).fetchall()
     return [dict(r) for r in rows]
+
+
+def store_change_event(conn: sqlite3.Connection, run_timestamp: str, url: str,
+                       event_type: str, diff_text: str | None = None,
+                       ai_result: dict | None = None) -> int:
+    """Insert a change event row. Returns the row id."""
+    page_name = url_to_filename(url)
+    now = utcnow()
+    category = ai_result.get("category") if ai_result else None
+    severity = ai_result.get("severity") if ai_result else None
+    summary = ai_result.get("summary") if ai_result else None
+    details = ai_result.get("details") if ai_result else None
+    action_required = ai_result.get("action_required") if ai_result else None
+    tags = ai_result.get("tags") if ai_result else None
+    tags_json = json.dumps(tags) if tags else None
+    cur = conn.execute(
+        "INSERT INTO change_events "
+        "(run_timestamp, url, page_name, event_type, category, severity, "
+        " summary, details, action_required, tags_json, diff_text, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (run_timestamp, url, page_name, event_type, category, severity,
+         summary, details, action_required, tags_json, diff_text, now),
+    )
+    return cur.lastrowid
+
+
+def query_change_events(conn: sqlite3.Connection, *, category: str | None = None,
+                        severity: str | None = None, page_name: str | None = None,
+                        keyword: str | None = None, since: str | None = None,
+                        until: str | None = None, limit: int = 50) -> list[sqlite3.Row]:
+    """Flexible query against change_events with optional filters."""
+    clauses = []
+    params = []
+    if category:
+        clauses.append("category = ?")
+        params.append(category)
+    if severity:
+        clauses.append("severity = ?")
+        params.append(severity)
+    if page_name:
+        clauses.append("page_name LIKE ?")
+        params.append(f"%{page_name}%")
+    if keyword:
+        clauses.append("(summary LIKE ? OR details LIKE ? OR tags_json LIKE ?)")
+        params.extend([f"%{keyword}%"] * 3)
+    if since:
+        clauses.append("run_timestamp >= ?")
+        params.append(since)
+    if until:
+        clauses.append("run_timestamp <= ?")
+        params.append(until)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    params.append(limit)
+    return conn.execute(
+        f"SELECT * FROM change_events{where} ORDER BY run_timestamp DESC, id DESC LIMIT ?",
+        params,
+    ).fetchall()
+
+
+def update_change_event_issue(conn: sqlite3.Connection, event_id: int, issue_url: str):
+    """Set the gh_issue_url on a change event row."""
+    conn.execute("UPDATE change_events SET gh_issue_url = ? WHERE id = ?", (issue_url, event_id))
+
+
+def get_change_events_for_run(conn: sqlite3.Connection, run_timestamp: str) -> list[sqlite3.Row]:
+    """Return all change events for a specific run."""
+    return conn.execute(
+        "SELECT * FROM change_events WHERE run_timestamp = ? ORDER BY id",
+        (run_timestamp,),
+    ).fetchall()
 
 
 # ── Utilities ───────────────────────────────────────────────────────────────
@@ -1111,6 +1202,105 @@ Format your response exactly as:
 
 Omit any section that has no items. Be concise — bullet points, not paragraphs."""
 
+_STRUCTURED_DIGEST_INSTRUCTION = """\
+Classify each documentation change from the diffs provided on stdin.
+
+For each changed URL, produce a JSON object with:
+- url: the full URL that changed
+- category: one of "feature", "breaking", "deprecation", "clarification", "flag_change", "bugfix"
+- severity: one of "high", "medium", "low"
+- summary: one-line description of what changed
+- details: 2-3 sentence explanation
+- action_required: what the user should do (null if nothing)
+- tags: array of keyword tags (e.g. ["hooks", "permissions", "cli"])
+
+Severity guide:
+- high: breaking changes, removed features, security-related
+- medium: new features, flag changes, deprecations
+- low: clarifications, typo fixes, minor rewording
+
+Return a JSON object: {"events": [...]}\
+"""
+
+_STRUCTURED_DIGEST_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "events": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "category": {"type": "string", "enum": [
+                        "feature", "breaking", "deprecation",
+                        "clarification", "flag_change", "bugfix"]},
+                    "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "summary": {"type": "string"},
+                    "details": {"type": "string"},
+                    "action_required": {"type": ["string", "null"]},
+                    "tags": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["url", "category", "severity", "summary", "details", "tags"]
+            }
+        }
+    },
+    "required": ["events"]
+})
+
+
+def _extract_report_timestamp(report_text: str) -> str | None:
+    """Extract the timestamp from a report's *Generated: ...* line."""
+    m = re.search(r'\*Generated:\s*(.+?)\*', report_text)
+    return m.group(1).strip() if m else None
+
+
+def _extract_diff_for_url(diffs_text: str, url: str) -> str | None:
+    """Extract the diff block for a specific URL from the diffs section."""
+    marker = f"### {url}\n"
+    idx = diffs_text.find(marker)
+    if idx == -1:
+        return None
+    start = idx + len(marker)
+    # Find next ### or end
+    next_marker = diffs_text.find("\n### ", start)
+    block = diffs_text[start:next_marker] if next_marker != -1 else diffs_text[start:]
+    # Strip code fences
+    block = block.strip()
+    if block.startswith("```diff"):
+        block = block[len("```diff"):].strip()
+    if block.endswith("```"):
+        block = block[:-3].strip()
+    return block
+
+
+def _extract_added_pages(report_text: str) -> list[str]:
+    """Parse URLs from ## Added Pages section."""
+    m = re.search(r'## Added Pages\s*\n((?:- .+\n?)+)', report_text)
+    if not m:
+        return []
+    return re.findall(r'- (https?://\S+)', m.group(1))
+
+
+def _extract_removed_pages(report_text: str) -> list[str]:
+    """Parse URLs from ## Removed Pages section."""
+    m = re.search(r'## Removed Pages\s*\n((?:- .+\n?)+)', report_text)
+    if not m:
+        return []
+    return re.findall(r'- (https?://\S+)', m.group(1))
+
+
+def _parse_relative_date(date_str: str) -> str:
+    """Parse date strings: '7d' → 7 days ago, ISO dates pass through."""
+    m = re.match(r'^(\d+)d$', date_str.strip())
+    if m:
+        days = int(m.group(1))
+        dt = datetime.now(timezone.utc) - timedelta(days=days)
+        return dt.isoformat()
+    # Try ISO or bare date
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', date_str.strip()):
+        return date_str.strip() + "T00:00:00+00:00"
+    return date_str.strip()
+
 
 def _generate_digest_html(digest_md: str, output_dir: Path):
     """Write a self-contained HTML digest to output_dir/digest.html."""
@@ -1161,6 +1351,151 @@ def _generate_digest_html(digest_md: str, output_dir: Path):
     (output_dir / "digest.html").write_text(html, encoding="utf-8")
 
 
+def _run_structured_classification(report_text: str, diffs: str, model: str, env: dict,
+                                   report_dir: Path) -> list[dict] | None:
+    """Run structured JSON classification of changes. Returns list of events or None on failure."""
+    run_timestamp = _extract_report_timestamp(report_text) or utcnow()
+    conn = init_db(report_dir / "snapshots.db" if (report_dir / "snapshots.db").exists() else DB_PATH)
+
+    # Check for duplicate events
+    existing = conn.execute(
+        "SELECT COUNT(*) as cnt FROM change_events WHERE run_timestamp = ?", (run_timestamp,)
+    ).fetchone()
+    if existing and existing["cnt"] > 0:
+        if HAS_RICH:
+            console.print(f"[dim]Structured classification already exists for {run_timestamp} "
+                          f"({existing['cnt']} events) — skipping.[/dim]")
+        else:
+            print(f"Structured classification already exists for {run_timestamp} "
+                  f"({existing['cnt']} events) — skipping.")
+        return None
+
+    stdin_text = f"## Diffs to classify:\n\n{diffs}"
+
+    if HAS_RICH:
+        console.print("[bold blue]Running structured classification...[/bold blue]")
+    else:
+        print("Running structured classification...")
+
+    try:
+        result = subprocess.run(
+            ["claude", "-p", _STRUCTURED_DIGEST_INSTRUCTION, "--model", model,
+             "--max-turns", "1", "--output-format", "json",
+             "--json-schema", _STRUCTURED_DIGEST_SCHEMA],
+            input=stdin_text,
+            capture_output=True, text=True, timeout=300, env=env,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        print(f"Warning: structured classification failed ({exc}). Continuing with text digest.")
+        return None
+
+    if result.returncode != 0:
+        print(f"Warning: structured classification exited with code {result.returncode}. "
+              f"Continuing with text digest.")
+        return None
+
+    raw = result.stdout.strip()
+    if not raw:
+        print("Warning: structured classification returned empty output. Continuing with text digest.")
+        return None
+
+    # Parse the JSON — claude CLI may wrap in {"type":"result","result":"..."}
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "result" in parsed and isinstance(parsed["result"], str):
+            parsed = json.loads(parsed["result"])
+        events = parsed.get("events", [])
+    except (json.JSONDecodeError, AttributeError) as exc:
+        print(f"Warning: failed to parse structured output ({exc}). Continuing with text digest.")
+        return None
+
+    # Store each event
+    stored = 0
+    for ev in events:
+        diff_text = _extract_diff_for_url(diffs, ev.get("url", ""))
+        store_change_event(conn, run_timestamp, ev.get("url", ""), "changed",
+                           diff_text=diff_text, ai_result=ev)
+        stored += 1
+
+    # Also store added/removed pages
+    for url in _extract_added_pages(report_text):
+        store_change_event(conn, run_timestamp, url, "added", ai_result={
+            "category": "feature", "severity": "medium",
+            "summary": f"New documentation page: {url_to_filename(url)}",
+            "details": "A new page was added to the documentation index.",
+            "tags": ["new-page"],
+        })
+        stored += 1
+    for url in _extract_removed_pages(report_text):
+        store_change_event(conn, run_timestamp, url, "removed", ai_result={
+            "category": "breaking", "severity": "high",
+            "summary": f"Documentation page removed: {url_to_filename(url)}",
+            "details": "A page was removed from the documentation index.",
+            "tags": ["removed-page"],
+        })
+        stored += 1
+
+    conn.commit()
+    if HAS_RICH:
+        console.print(f"[green]Stored {stored} change events for run {run_timestamp}[/green]")
+    else:
+        print(f"Stored {stored} change events for run {run_timestamp}")
+
+    return events
+
+
+def _create_gh_issues(report_text: str, report_dir: Path, gh_repo: str | None = None):
+    """Create GitHub issues for breaking changes. Called when --gh-issue is set."""
+    if not shutil.which("gh"):
+        print("Warning: 'gh' CLI not found — skipping GitHub issue creation.")
+        return
+
+    run_timestamp = _extract_report_timestamp(report_text) or utcnow()
+    conn = init_db(report_dir / "snapshots.db" if (report_dir / "snapshots.db").exists() else DB_PATH)
+    events = get_change_events_for_run(conn, run_timestamp)
+    breaking = [e for e in events if e["category"] == "breaking" and not e["gh_issue_url"]]
+
+    if not breaking:
+        print("No breaking changes to create issues for.")
+        return
+
+    repo_flag = ["--repo", gh_repo] if gh_repo else []
+    created = 0
+    for ev in breaking:
+        title = f"[Claude Docs] Breaking: {ev['summary']}"
+        tags = json.loads(ev["tags_json"]) if ev["tags_json"] else []
+        body = (
+            f"## Breaking Documentation Change\n\n"
+            f"**Page:** {ev['url']}\n"
+            f"**Severity:** {ev['severity']}\n"
+            f"**Detected:** {ev['run_timestamp']}\n\n"
+            f"### Details\n\n{ev['details']}\n\n"
+        )
+        if ev["action_required"]:
+            body += f"### Action Required\n\n{ev['action_required']}\n\n"
+        if tags:
+            body += f"**Tags:** {', '.join(tags)}\n\n"
+        body += "*Auto-generated by claude_docs_monitor*"
+
+        try:
+            cmd = ["gh", "issue", "create", "--title", title, "--body", body,
+                   "--label", "claude-docs,breaking-change"] + repo_flag
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if res.returncode == 0:
+                issue_url = res.stdout.strip()
+                update_change_event_issue(conn, ev["id"], issue_url)
+                created += 1
+                print(f"  Created issue: {issue_url}")
+            else:
+                print(f"  Warning: failed to create issue for '{ev['summary']}': {res.stderr[:200]}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+            print(f"  Warning: gh issue create failed ({exc})")
+
+    conn.commit()
+    if created:
+        print(f"Created {created} GitHub issue(s) for breaking changes.")
+
+
 def cmd_digest(args):
     """AI-analyze latest diffs into an actionable digest."""
     report_dir = Path(args.report) if args.report else DB_DIR
@@ -1195,17 +1530,21 @@ def cmd_digest(args):
         print("Install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
         sys.exit(1)
 
-    stdin_text = f"## Diffs to analyze:\n\n{diffs}"
-
     model = getattr(args, "model", "sonnet")
+
+    # Allow running inside a Claude Code session (nested invocation)
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
+    # Phase 1: Structured classification (stores events in DB)
+    _run_structured_classification(report_text, diffs, model, env, report_dir)
+
+    # Phase 2: Text digest (existing behavior)
+    stdin_text = f"## Diffs to analyze:\n\n{diffs}"
 
     if HAS_RICH:
         console.print("[bold blue]Generating AI digest...[/bold blue]")
     else:
         print("Generating AI digest...")
-
-    # Allow running inside a Claude Code session (nested invocation)
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
     try:
         result = subprocess.run(
@@ -1257,6 +1596,290 @@ def cmd_digest(args):
         print("=" * 60)
 
     print(f"\nDigest written to {digest_md_path} and {report_dir / 'digest.html'}")
+
+    # Phase 3: GitHub issue creation (if requested)
+    if getattr(args, "gh_issue", False):
+        gh_repo = getattr(args, "gh_repo", None)
+        _create_gh_issues(report_text, report_dir, gh_repo)
+
+
+def cmd_query(args):
+    """Query the change intelligence database."""
+    conn = init_db()
+    keyword = getattr(args, "keyword", None)
+    category = getattr(args, "category", None)
+    severity = getattr(args, "severity", None)
+    page = getattr(args, "page", None)
+    since = getattr(args, "since", None)
+    until_date = getattr(args, "until", None)
+    limit = getattr(args, "limit", 50)
+    as_json = getattr(args, "json", False)
+
+    # Smart shortcut: if keyword matches a category name, redirect
+    known_categories = {"feature", "breaking", "deprecation", "clarification", "flag_change", "bugfix"}
+    if keyword and keyword.lower() in known_categories and not category:
+        category = keyword.lower()
+        keyword = None
+
+    # Parse relative dates
+    if since:
+        since = _parse_relative_date(since)
+    if until_date:
+        until_date = _parse_relative_date(until_date)
+
+    rows = query_change_events(conn, category=category, severity=severity,
+                               page_name=page, keyword=keyword,
+                               since=since, until=until_date, limit=limit)
+
+    if not rows:
+        print("No change events found matching your query.")
+        return
+
+    if as_json:
+        events = []
+        for r in rows:
+            ev = dict(r)
+            if ev.get("tags_json"):
+                ev["tags"] = json.loads(ev["tags_json"])
+                del ev["tags_json"]
+            else:
+                ev["tags"] = []
+                ev.pop("tags_json", None)
+            ev.pop("diff_text", None)
+            events.append(ev)
+        print(json.dumps({"events": events, "count": len(events)}, indent=2))
+        return
+
+    # Display results
+    severity_colors = {"high": "red", "medium": "yellow", "low": "green"}
+    category_colors = {"breaking": "red", "deprecation": "yellow", "feature": "green",
+                       "clarification": "cyan", "flag_change": "magenta", "bugfix": "blue"}
+
+    if HAS_RICH:
+        table = Table(title=f"Change Events ({len(rows)} results)")
+        table.add_column("Date", style="dim", max_width=20)
+        table.add_column("Page", max_width=25)
+        table.add_column("Type", max_width=10)
+        table.add_column("Cat", max_width=15)
+        table.add_column("Sev", max_width=6)
+        table.add_column("Summary", max_width=50)
+        for r in rows:
+            ts = r["run_timestamp"][:19] if r["run_timestamp"] else "—"
+            cat = r["category"] or "—"
+            sev = r["severity"] or "—"
+            cat_color = category_colors.get(cat, "white")
+            sev_color = severity_colors.get(sev, "white")
+            table.add_row(
+                ts,
+                r["page_name"] or "—",
+                r["event_type"] or "—",
+                f"[{cat_color}]{cat}[/{cat_color}]",
+                f"[{sev_color}]{sev}[/{sev_color}]",
+                r["summary"] or "—",
+            )
+        console.print(table)
+
+        # Show details for high-severity items
+        high = [r for r in rows if r["severity"] == "high"]
+        if high:
+            console.print(f"\n[bold red]High-severity details:[/bold red]")
+            for r in high:
+                console.print(f"\n  [bold]{r['summary']}[/bold]")
+                if r["details"]:
+                    console.print(f"  {r['details']}")
+                if r["action_required"]:
+                    console.print(f"  [yellow]Action: {r['action_required']}[/yellow]")
+    else:
+        print(f"\nChange Events ({len(rows)} results):")
+        print(f"{'Date':<20} {'Page':<25} {'Type':<10} {'Category':<15} {'Sev':<6} Summary")
+        print("─" * 120)
+        for r in rows:
+            ts = r["run_timestamp"][:19] if r["run_timestamp"] else "—"
+            print(f"{ts:<20} {(r['page_name'] or '—'):<25} {(r['event_type'] or '—'):<10} "
+                  f"{(r['category'] or '—'):<15} {(r['severity'] or '—'):<6} {r['summary'] or '—'}")
+
+        high = [r for r in rows if r["severity"] == "high"]
+        if high:
+            print(f"\nHigh-severity details:")
+            for r in high:
+                print(f"\n  {r['summary']}")
+                if r["details"]:
+                    print(f"  {r['details']}")
+                if r["action_required"]:
+                    print(f"  Action: {r['action_required']}")
+
+
+def cmd_backfill(args):
+    """Populate change_events from existing snapshot history."""
+    conn = init_db()
+    model = getattr(args, "model", "sonnet")
+    dry_run = getattr(args, "dry_run", False)
+    include_html = getattr(args, "include_html", False)
+
+    # Get all index snapshots in order
+    index_rows = conn.execute(
+        "SELECT id, fetched_at, urls_json FROM index_snapshots ORDER BY id"
+    ).fetchall()
+
+    if not index_rows:
+        print("No snapshots in database. Run 'check' first.")
+        return
+
+    if not shutil.which("claude") and not dry_run:
+        print("Error: 'claude' CLI not found in PATH.")
+        sys.exit(1)
+
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
+    runs_to_classify = []
+    for run_idx in range(1, len(index_rows)):
+        idx_row = index_rows[run_idx]
+        run_time = idx_row["fetched_at"]
+        current_urls = json.loads(idx_row["urls_json"])
+
+        # Check if already classified
+        existing = conn.execute(
+            "SELECT COUNT(*) as cnt FROM change_events WHERE run_timestamp = ?",
+            (datetime.fromisoformat(run_time).strftime("%Y-%m-%d %H:%M:%S UTC"),)
+        ).fetchone()
+        if existing and existing["cnt"] > 0:
+            continue
+
+        # Determine time window
+        prev_time = index_rows[run_idx - 1]["fetched_at"]
+        if run_idx + 1 < len(index_rows):
+            next_time = index_rows[run_idx + 1]["fetched_at"]
+        else:
+            next_time = "9999-12-31T23:59:59+00:00"
+
+        prev_urls = json.loads(index_rows[run_idx - 1]["urls_json"])
+
+        # Get page snapshots for both runs
+        cur_pages = {}
+        for pr in conn.execute(
+            "SELECT url, content, hash FROM page_snapshots "
+            "WHERE fetched_at >= ? AND fetched_at < ? ORDER BY id",
+            (run_time, next_time),
+        ).fetchall():
+            cur_pages[pr["url"]] = dict(pr)
+
+        prev_pages = {}
+        for pr in conn.execute(
+            "SELECT url, content, hash FROM page_snapshots "
+            "WHERE fetched_at >= ? AND fetched_at < ? ORDER BY id",
+            (prev_time, run_time),
+        ).fetchall():
+            prev_pages[pr["url"]] = dict(pr)
+
+        # Compute diffs
+        changes = []
+        for url in current_urls:
+            cur = cur_pages.get(url)
+            prev = prev_pages.get(url)
+            if cur and prev and cur["hash"] and prev["hash"]:
+                if cur["hash"] != prev["hash"] and cur["content"] and prev["content"]:
+                    diff_text = compute_diff(prev["content"], cur["content"], url)
+                    if not include_html and is_html_diff(diff_text):
+                        continue
+                    changes.append({"url": url, "diff": diff_text})
+
+        added = sorted(set(current_urls) - set(prev_urls))
+        removed = sorted(set(prev_urls) - set(current_urls))
+
+        if changes or added or removed:
+            timestamp = datetime.fromisoformat(run_time).strftime("%Y-%m-%d %H:%M:%S UTC")
+            runs_to_classify.append({
+                "timestamp": timestamp,
+                "changes": changes,
+                "added": added,
+                "removed": removed,
+            })
+
+    if not runs_to_classify:
+        print("No unclassified runs found. All runs already have change events.")
+        return
+
+    print(f"Found {len(runs_to_classify)} unclassified run(s) with changes.")
+
+    if dry_run:
+        for run in runs_to_classify:
+            n_ch = len(run["changes"])
+            n_add = len(run["added"])
+            n_rm = len(run["removed"])
+            print(f"  {run['timestamp']}: {n_ch} changes, {n_add} added, {n_rm} removed")
+        print("\n(Dry run — no API calls made.)")
+        return
+
+    classified = 0
+    for run in runs_to_classify:
+        # Build diffs text
+        diffs_lines = []
+        for ch in run["changes"]:
+            diffs_lines.append(f"### {ch['url']}\n")
+            diffs_lines.append("```diff")
+            diffs_lines.append(ch["diff"])
+            diffs_lines.append("```\n")
+        diffs_text = "\n".join(diffs_lines)
+
+        # Build minimal report text for helpers
+        report_text = f"*Generated: {run['timestamp']}*\n"
+        if run["added"]:
+            report_text += "\n## Added Pages\n\n" + "\n".join(f"- {u}" for u in run["added"]) + "\n"
+        if run["removed"]:
+            report_text += "\n## Removed Pages\n\n" + "\n".join(f"- {u}" for u in run["removed"]) + "\n"
+
+        if diffs_text.strip():
+            stdin_text = f"## Diffs to classify:\n\n{diffs_text}"
+            if HAS_RICH:
+                console.print(f"[dim]Classifying run {run['timestamp']}...[/dim]")
+            else:
+                print(f"Classifying run {run['timestamp']}...")
+
+            try:
+                result = subprocess.run(
+                    ["claude", "-p", _STRUCTURED_DIGEST_INSTRUCTION, "--model", model,
+                     "--max-turns", "1", "--output-format", "json",
+                     "--json-schema", _STRUCTURED_DIGEST_SCHEMA],
+                    input=stdin_text,
+                    capture_output=True, text=True, timeout=300, env=env,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    parsed = json.loads(result.stdout.strip())
+                    if isinstance(parsed, dict) and "result" in parsed and isinstance(parsed["result"], str):
+                        parsed = json.loads(parsed["result"])
+                    events = parsed.get("events", [])
+                    for ev in events:
+                        diff_text = _extract_diff_for_url(diffs_text, ev.get("url", ""))
+                        store_change_event(conn, run["timestamp"], ev.get("url", ""), "changed",
+                                           diff_text=diff_text, ai_result=ev)
+                else:
+                    print(f"  Warning: classification failed for {run['timestamp']}")
+            except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+                print(f"  Warning: classification failed for {run['timestamp']}: {exc}")
+
+        # Store added/removed pages
+        for url in run["added"]:
+            store_change_event(conn, run["timestamp"], url, "added", ai_result={
+                "category": "feature", "severity": "medium",
+                "summary": f"New documentation page: {url_to_filename(url)}",
+                "details": "A new page was added to the documentation index.",
+                "tags": ["new-page"],
+            })
+        for url in run["removed"]:
+            store_change_event(conn, run["timestamp"], url, "removed", ai_result={
+                "category": "breaking", "severity": "high",
+                "summary": f"Documentation page removed: {url_to_filename(url)}",
+                "details": "A page was removed from the documentation index.",
+                "tags": ["removed-page"],
+            })
+
+        conn.commit()
+        classified += 1
+
+    if HAS_RICH:
+        console.print(f"\n[green]Backfilled {classified} run(s) into change_events table.[/green]")
+    else:
+        print(f"\nBackfilled {classified} run(s) into change_events table.")
 
 
 def cmd_urls(args):
@@ -1312,7 +1935,14 @@ def build_parser() -> argparse.ArgumentParser:
   %(prog)s dump                         export latest snapshots to data/pages/
   %(prog)s dump ~/review                export to a custom directory
   %(prog)s digest                       AI-analyze latest diffs into an actionable digest
-  %(prog)s digest --model opus          use a different model for analysis""",
+  %(prog)s digest --model opus          use a different model for analysis
+  %(prog)s digest --gh-issue            create GitHub issues for breaking changes
+  %(prog)s query breaking               show all breaking changes
+  %(prog)s query --since 7d             changes in the last 7 days
+  %(prog)s query "hooks" --severity high  keyword search with severity filter
+  %(prog)s query --json | jq .          machine-readable output
+  %(prog)s backfill                     classify historical changes with AI
+  %(prog)s backfill --dry-run           preview what would be classified""",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -1406,6 +2036,72 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", default="sonnet",
         help="Model alias (default: sonnet)",
     )
+    digest_p.add_argument(
+        "--gh-issue", action="store_true",
+        help="Auto-create GitHub issues for breaking changes (requires gh CLI)",
+    )
+    digest_p.add_argument(
+        "--gh-repo", metavar="OWNER/REPO",
+        help="Target repository for issues (default: current repo)",
+    )
+
+    # query
+    query_p = sub.add_parser(
+        "query",
+        help="Query the change intelligence database",
+        description="Search and filter accumulated change events by category, severity, "
+                    "page, keyword, or date range.",
+    )
+    query_p.add_argument(
+        "keyword", nargs="?",
+        help="Search keyword (or category shortcut: breaking, feature, deprecation, etc.)",
+    )
+    query_p.add_argument("--category", choices=[
+        "feature", "breaking", "deprecation", "clarification", "flag_change", "bugfix"],
+        help="Filter by change category",
+    )
+    query_p.add_argument(
+        "--severity", choices=["high", "medium", "low"],
+        help="Filter by severity level",
+    )
+    query_p.add_argument(
+        "--page", metavar="NAME",
+        help="Filter by page name (partial match, e.g. 'hooks.md')",
+    )
+    query_p.add_argument(
+        "--since", metavar="DATE",
+        help="Show events since DATE ('7d' for 7 days ago, or YYYY-MM-DD)",
+    )
+    query_p.add_argument(
+        "--until", metavar="DATE",
+        help="Show events until DATE ('7d' for 7 days ago, or YYYY-MM-DD)",
+    )
+    query_p.add_argument(
+        "--limit", type=int, default=50,
+        help="Maximum results (default: 50)",
+    )
+    query_p.add_argument(
+        "--json", action="store_true",
+        help="Output results as JSON",
+    )
+
+    # backfill
+    backfill_p = sub.add_parser(
+        "backfill",
+        help="Populate change_events from existing snapshot history using AI classification",
+    )
+    backfill_p.add_argument(
+        "--model", default="sonnet",
+        help="Model alias (default: sonnet)",
+    )
+    backfill_p.add_argument(
+        "--dry-run", action="store_true",
+        help="Show what would be classified without making API calls",
+    )
+    backfill_p.add_argument(
+        "--include-html", action="store_true",
+        help="Include diffs that are predominantly HTML/script noise",
+    )
 
     return parser
 
@@ -1441,6 +2137,10 @@ def main():
         cmd_dump(args)
     elif args.command == "digest":
         cmd_digest(args)
+    elif args.command == "query":
+        cmd_query(args)
+    elif args.command == "backfill":
+        cmd_backfill(args)
 
 
 if __name__ == "__main__":

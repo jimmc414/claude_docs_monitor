@@ -6422,5 +6422,109 @@ hr { border: none; border-top: 2px solid #e1e4e8; margin: 2em 0; }
 <div class="diff-line ctx"> For full configuration options including `extraKnownMarketplaces` and `enabledPlugins`, see [Plugin settings](/en/settings#plugin-settings).</div>
 <div class="diff-line ctx"> </div>
 <div class="diff-line ctx"> ## Troubleshooting</div>
+</div><hr><h2>2026-02-27 05:33:32 UTC</h2>
+<table><tr><th>Metric</th><th>Count</th></tr>
+<tr><td>Changed</td><td>6</td></tr>
+<tr><td>Added</td><td>0</td></tr>
+<tr><td>Removed</td><td>0</td></tr>
+<tr><td>Errors</td><td>0</td></tr>
+</table>
+<h3>Diffs</h3>
+<h4>https://code.claude.com/docs/en/plugins.md</h4>
+<div class="diff">
+<div class="diff-header">--- a/https://code.claude.com/docs/en/plugins.md</div>
+<div class="diff-header">+++ b/https://code.claude.com/docs/en/plugins.md</div>
+<div class="diff-line hunk">@@ -314,6 +314,13 @@</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> Once your plugin is in a marketplace, others can install it using the instructions in [Discover and install plugins](/en/discover-plugins).</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line add">+### Submit your plugin to the official marketplace</div>
+<div class="diff-line add">+</div>
+<div class="diff-line add">+To submit a plugin to the official Anthropic marketplace, use one of the in-app submission forms:</div>
+<div class="diff-line add">+</div>
+<div class="diff-line add">+* **Claude.ai**: [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit)</div>
+<div class="diff-line add">+* **Console**: [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)</div>
+<div class="diff-line add">+</div>
+<div class="diff-line ctx"> &lt;Note&gt;</div>
+<div class="diff-line ctx">   For complete technical specifications, debugging techniques, and distribution strategies, see [Plugins reference](/en/plugins-reference).</div>
+<div class="diff-line ctx"> &lt;/Note&gt;</div>
+</div>
+<h4>https://code.claude.com/docs/en/model-config.md</h4>
+<div class="diff">
+<div class="diff-header">--- a/https://code.claude.com/docs/en/model-config.md</div>
+<div class="diff-header">+++ b/https://code.claude.com/docs/en/model-config.md</div>
+<div class="diff-line hunk">@@ -140,6 +140,8 @@</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> Effort is currently supported on Opus 4.6. The effort slider appears in `/model` when a supported model is selected.</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line add">+To disable adaptive reasoning on Opus 4.6 and Sonnet 4.6 and revert to the previous fixed thinking budget, set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1`. When disabled, these models use the fixed budget controlled by `MAX_THINKING_TOKENS`. See [environment variables](/en/settings#environment-variables).</div>
+<div class="diff-line add">+</div>
+<div class="diff-line ctx"> ### Extended context</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> Opus 4.6 and Sonnet 4.6 support a [1 million token context window](https://platform.claude.com/docs/en/build-with-claude/context-windows#1m-token-context-window) for long sessions with large codebases.</div>
+</div>
+<h4>https://code.claude.com/docs/en/settings.md</h4>
+<div class="diff">
+<div class="diff-header">--- a/https://code.claude.com/docs/en/settings.md</div>
+<div class="diff-header">+++ b/https://code.claude.com/docs/en/settings.md</div>
+<div class="diff-line hunk">@@ -779,9 +779,11 @@</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_CLIENT_KEY`                       | Path to client private key file for mTLS authentication                                                                                                                                                                                                                                                                                                                                                                                                                                               |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_CLIENT_KEY_PASSPHRASE`            | Passphrase for encrypted CLAUDE\_CODE\_CLIENT\_KEY (optional)                                                                                                                                                                                                                                                                                                                                                                                                                                         |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_DISABLE_1M_CONTEXT`               | Set to `1` to disable [1M context window](/en/model-config#extended-context) support. When set, 1M model variants are unavailable in the model picker. Useful for enterprise environments with compliance requirements                                                                                                                                                                                                                                                                                |     |</div>
+<div class="diff-line add">+| `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING`        | Set to `1` to disable [adaptive reasoning](/en/model-config#adjust-effort-level) for Opus 4.6 and Sonnet 4.6. When disabled, these models fall back to the fixed thinking budget controlled by `MAX_THINKING_TOKENS`                                                                                                                                                                                                                                                                                  |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_DISABLE_AUTO_MEMORY`              | Set to `1` to disable [auto memory](/en/memory#auto-memory). Set to `0` to force auto memory on during the gradual rollout. When disabled, Claude does not create or load auto memory files                                                                                                                                                                                                                                                                                                           |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`         | Set to `1` to disable all background task functionality, including the `run_in_background` parameter on Bash and subagent tools, auto-backgrounding, and the Ctrl+B shortcut                                                                                                                                                                                                                                                                                                                          |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`       | Set to `1` to disable Anthropic API-specific `anthropic-beta` headers. Use this if experiencing issues like "Unexpected value(s) for the `anthropic-beta` header" when using an LLM gateway with third-party providers                                                                                                                                                                                                                                                                                |     |</div>
+<div class="diff-line add">+| `CLAUDE_CODE_DISABLE_FAST_MODE`                | Set to `1` to disable [fast mode](/en/fast-mode)                                                                                                                                                                                                                                                                                                                                                                                                                                                      |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY`          | Set to `1` to disable the "How is Claude doing?" session quality surveys. Also disabled when using third-party providers or when telemetry is disabled. See [Session quality surveys](/en/data-usage#session-quality-surveys)                                                                                                                                                                                                                                                                         |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`     | Equivalent of setting `DISABLE_AUTOUPDATER`, `DISABLE_BUG_COMMAND`, `DISABLE_ERROR_REPORTING`, and `DISABLE_TELEMETRY`                                                                                                                                                                                                                                                                                                                                                                                |     |</div>
+<div class="diff-line ctx"> | `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`           | Set to `1` to disable automatic terminal title updates based on conversation context                                                                                                                                                                                                                                                                                                                                                                                                                  |     |</div>
+</div>
+<h4>https://code.claude.com/docs/en/discover-plugins.md</h4>
+<div class="diff">
+<div class="diff-header">--- a/https://code.claude.com/docs/en/discover-plugins.md</div>
+<div class="diff-header">+++ b/https://code.claude.com/docs/en/discover-plugins.md</div>
+<div class="diff-line hunk">@@ -37,7 +37,12 @@</div>
+<div class="diff-line ctx"> ```</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> &lt;Note&gt;</div>
+<div class="diff-line del">-  The official marketplace is maintained by Anthropic. To distribute your own plugins, [create your own marketplace](/en/plugin-marketplaces) and share it with users.</div>
+<div class="diff-line add">+  The official marketplace is maintained by Anthropic. To submit a plugin to the official marketplace, use one of the in-app submission forms:</div>
+<div class="diff-line add">+</div>
+<div class="diff-line add">+  * **Claude.ai**: [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit)</div>
+<div class="diff-line add">+  * **Console**: [platform.claude.com/plugins/submit](https://platform.claude.com/plugins/submit)</div>
+<div class="diff-line add">+</div>
+<div class="diff-line add">+  To distribute plugins independently, [create your own marketplace](/en/plugin-marketplaces) and share it with users.</div>
+<div class="diff-line ctx"> &lt;/Note&gt;</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> The official marketplace includes several categories of plugins:</div>
+</div>
+<h4>https://code.claude.com/docs/en/common-workflows.md</h4>
+<div class="diff">
+<div class="diff-header">--- a/https://code.claude.com/docs/en/common-workflows.md</div>
+<div class="diff-header">+++ b/https://code.claude.com/docs/en/common-workflows.md</div>
+<div class="diff-line hunk">@@ -540,7 +540,7 @@</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> **With other models**, thinking uses a fixed budget of up to 31,999 tokens from your output budget. You can limit this with the [`MAX_THINKING_TOKENS`](/en/settings#environment-variables) environment variable, or disable thinking entirely via `/config` or the `Option+T`/`Alt+T` toggle.</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line del">-`MAX_THINKING_TOKENS` is ignored when using Opus 4.6, since adaptive reasoning controls thinking depth instead. The one exception: setting `MAX_THINKING_TOKENS=0` still disables thinking entirely on any model.</div>
+<div class="diff-line add">+`MAX_THINKING_TOKENS` is ignored on Opus 4.6 and Sonnet 4.6, since adaptive reasoning controls thinking depth instead. The one exception: setting `MAX_THINKING_TOKENS=0` still disables thinking entirely on any model. To disable adaptive thinking and revert to the fixed thinking budget, set `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1`. See [environment variables](/en/settings#environment-variables).</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> &lt;Warning&gt;</div>
+<div class="diff-line ctx">   You're charged for all thinking tokens used, even though Claude 4 models show summarized thinking</div>
+</div>
+<h4>https://code.claude.com/docs/en/fast-mode.md</h4>
+<div class="diff">
+<div class="diff-header">--- a/https://code.claude.com/docs/en/fast-mode.md</div>
+<div class="diff-header">+++ b/https://code.claude.com/docs/en/fast-mode.md</div>
+<div class="diff-line hunk">@@ -103,6 +103,8 @@</div>
+<div class="diff-line ctx"> * **Console** (API customers): [Claude Code preferences](https://platform.claude.com/claude-code/preferences)</div>
+<div class="diff-line ctx"> * **Claude AI** (Teams and Enterprise): [Admin Settings &gt; Claude Code](https://claude.ai/admin-settings/claude-code)</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line add">+Another option to disable fast mode entirely is to set `CLAUDE_CODE_DISABLE_FAST_MODE=1`. See [Environment variables](/en/settings#environment-variables).</div>
+<div class="diff-line add">+</div>
+<div class="diff-line ctx"> ## Handle rate limits</div>
+<div class="diff-line ctx"> </div>
+<div class="diff-line ctx"> Fast mode has separate rate limits from standard Opus 4.6. When you hit the fast mode rate limit or run out of extra usage credits:</div>
 </div></body>
 </html>

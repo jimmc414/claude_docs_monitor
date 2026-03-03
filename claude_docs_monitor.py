@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import webbrowser
 from datetime import datetime, timedelta, timezone
 from difflib import unified_diff
 from pathlib import Path
@@ -1404,6 +1405,8 @@ def _run_structured_classification(report_text: str, diffs: str, model: str, env
         parsed = json.loads(raw)
         if isinstance(parsed, dict) and "result" in parsed and isinstance(parsed["result"], str):
             parsed = json.loads(parsed["result"])
+        if isinstance(parsed, list):
+            parsed = {"events": parsed}
         events = parsed.get("events", [])
     except (json.JSONDecodeError, AttributeError) as exc:
         print(f"Warning: failed to parse structured output ({exc}). Continuing with text digest.")
@@ -1596,6 +1599,13 @@ def cmd_digest(args):
         print("=" * 60)
 
     print(f"\nDigest written to {digest_md_path} and {report_dir / 'digest.html'}")
+
+    if not getattr(args, "no_open", False):
+        digest_html_path = report_dir / "digest.html"
+        try:
+            webbrowser.open(digest_html_path.as_uri())
+        except Exception:
+            pass  # Non-critical — don't fail if no browser available
 
     # Phase 3: GitHub issue creation (if requested)
     if getattr(args, "gh_issue", False):
@@ -2043,6 +2053,10 @@ def build_parser() -> argparse.ArgumentParser:
     digest_p.add_argument(
         "--gh-repo", metavar="OWNER/REPO",
         help="Target repository for issues (default: current repo)",
+    )
+    digest_p.add_argument(
+        "--no-open", action="store_true",
+        help="Don't open digest.html in browser after generation",
     )
 
     # query

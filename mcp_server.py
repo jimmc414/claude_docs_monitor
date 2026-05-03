@@ -33,11 +33,18 @@ from claude_docs_monitor import (
     _parse_relative_date,
 )
 
+# Optional RAG layer — only imported on first use to avoid loading
+# numpy/embedding deps for users who don't run reindex.
+_rag_loaded = False
+_doc_index = None
+_embedder = None
+_retriever = None
+
 # ── Configuration ───────────────────────────────────────────────────────────
 
-# DB path: env var → canonical XDG location → local ./data/
-_CANONICAL_DB = Path.home() / ".local/share/claude-docs-monitor/data/snapshots.db"
-_LOCAL_DB = Path("data/snapshots.db")
+# DB path: env var → canonical XDG location → local ./data-claude/
+_CANONICAL_DB = Path.home() / ".local/share/claude-docs-monitor/data-claude/snapshots.db"
+_LOCAL_DB = Path("data-claude/snapshots.db")
 
 DB_PATH = Path(
     os.environ.get("DOCS_MONITOR_DB")
@@ -50,6 +57,35 @@ DATA_DIR = DB_PATH.parent  # digest.md, report.md, pages/ live alongside the DB
 def _get_conn() -> sqlite3.Connection:
     """Open a read-only DB connection. Calls init_db() to ensure schema exists."""
     return init_db(DB_PATH)
+
+
+def _rag_components():
+    """Lazy-load and cache (DocIndex, EmbeddingCache, HybridRetriever) tuple.
+
+    Returns (None, None, None) if the index/embedding files don't exist yet
+    or the optional deps (numpy, etc.) aren't installed.
+    """
+    global _rag_loaded, _doc_index, _embedder, _retriever
+    if _rag_loaded:
+        return _doc_index, _embedder, _retriever
+    _rag_loaded = True
+
+    index_db = DATA_DIR / "index.db"
+    emb_db = DATA_DIR / "embeddings.db"
+    if not index_db.exists():
+        return None, None, None
+
+    try:
+        from doc_index import DocIndex
+        from embedding_cache import EmbeddingCache
+        from retriever import HybridRetriever
+    except ImportError:
+        return None, None, None
+
+    _embedder = EmbeddingCache(emb_db)
+    _doc_index = DocIndex(index_db, embedder=_embedder)
+    _retriever = HybridRetriever(_doc_index, _embedder)
+    return _doc_index, _embedder, _retriever
 
 
 # ── MCP Server ──────────────────────────────────────────────────────────────
@@ -235,6 +271,225 @@ def search_pages(keyword: str, limit: int = 10) -> dict:
         return {"keyword": keyword, "matches": matches, "count": len(matches)}
     finally:
         conn.close()
+
+
+# ── RAG Tools (M3-M5) ───────────────────────────────────────────────────────
+
+
+@mcp.tool()
+def hybrid_search(
+    query: str,
+    source_type: str | None = None,
+    category: str | None = None,
+    severity: str | None = None,
+    page: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    k: int = 10,
+    rerank: bool = True,
+) -> dict:
+    """Hybrid BM25+dense semantic search with optional Claude rerank.
+
+    Replaces lexical-only `search_pages` for natural-language questions.
+    Combines BM25 (FTS5), dense cosine on raw vectors, and dense cosine on
+    LLM-summary vectors. Fuses with RRF, then reranks with Claude.
+
+    Args:
+        query: Natural-language question or keyword.
+        source_type: 'page' | 'change_event' | 'wiki_synthesis' | 'kg_entity' (optional).
+        category, severity, page, since, until: Metadata filters.
+        k: Number of results (default 10).
+        rerank: Apply LLM rerank pass (default True; slower but higher quality).
+    """
+    _, _, retriever = _rag_components()
+    if retriever is None:
+        return {"error": "Hybrid retrieval index not built. Run "
+                         "`python claude_docs_monitor.py reindex`."}
+
+    filters: dict = {}
+    if category:
+        filters["category"] = category
+    if severity:
+        filters["severity"] = severity
+    if page:
+        filters["page"] = page
+    if since:
+        filters["since"] = _parse_relative_date(since)
+    if until:
+        filters["until"] = _parse_relative_date(until)
+
+    hits = retriever.retrieve(
+        query,
+        source_type=source_type,
+        filters=filters or None,
+        k=k,
+        rerank=rerank,
+    )
+    return {
+        "query": query,
+        "count": len(hits),
+        "hits": [h.to_dict() for h in hits],
+    }
+
+
+@mcp.tool()
+def change_search(
+    query: str,
+    since: str | None = None,
+    until: str | None = None,
+    category: str | None = None,
+    severity: str | None = None,
+    page: str | None = None,
+    k: int = 10,
+) -> dict:
+    """Hybrid search restricted to documentation change events.
+
+    Use this for natural-language questions about *what changed* — e.g.,
+    "what changed about hooks recently?". For exact-filter-only queries
+    (no keyword), use `query_changes` instead.
+    """
+    return hybrid_search(
+        query=query,
+        source_type="change_event",
+        category=category,
+        severity=severity,
+        page=page,
+        since=since,
+        until=until,
+        k=k,
+    )
+
+
+@mcp.tool()
+def find_similar(chunk_id: int, k: int = 10) -> dict:
+    """Find chunks most similar to a given chunk_id (cosine on content vectors)."""
+    _, _, retriever = _rag_components()
+    if retriever is None:
+        return {"error": "Hybrid retrieval index not built. Run "
+                         "`python claude_docs_monitor.py reindex`."}
+    hits = retriever.find_similar(chunk_id, k=k)
+    return {
+        "chunk_id": chunk_id,
+        "count": len(hits),
+        "similar": [h.to_dict() for h in hits],
+    }
+
+
+@mcp.tool()
+def get_chunk(chunk_id: int) -> dict:
+    """Fetch a single chunk's full content and metadata by ID."""
+    index, _, _ = _rag_components()
+    if index is None:
+        return {"error": "Hybrid retrieval index not built. Run "
+                         "`python claude_docs_monitor.py reindex`."}
+    c = index.get_chunk(chunk_id)
+    if c is None:
+        return {"error": f"chunk_id {chunk_id} not found"}
+    return {
+        "chunk_id": c.id,
+        "source_type": c.source_type,
+        "source_id": c.source_id,
+        "chunk_type": c.chunk_type,
+        "heading_path": c.heading_path,
+        "content": c.content,
+        "summary": c.summary,
+        "url": c.url,
+        "metadata": c.metadata,
+        "line_start": c.line_start,
+        "line_end": c.line_end,
+    }
+
+
+@mcp.tool()
+def build_report(
+    question: str,
+    scope: str = "all",
+    since: str | None = None,
+    until: str | None = None,
+    model: str = "opus",
+    max_turns: int = 6,
+) -> dict:
+    """Build an agentic RAG research report with inline citations.
+
+    Decomposes the question, retrieves evidence, reasons in a tool-equipped
+    loop, synthesizes with citations, and self-critiques. Returns paths to
+    the markdown report and companion JSON.
+
+    Args:
+        question: Your research question.
+        scope: 'docs' | 'changes' | 'all' (default 'all').
+        since, until: Date filters ('7d', '30d', YYYY-MM-DD).
+        model: 'opus' | 'sonnet' | 'haiku' (default 'opus').
+        max_turns: Max tool-use turns in the agentic loop (default 6).
+    """
+    try:
+        from report_builder import build_report as _build
+    except ImportError as e:
+        return {"error": f"report_builder not importable: {e}"}
+
+    scope_map = {
+        "docs": ["page"],
+        "changes": ["change_event"],
+        "all": ["page", "change_event"],
+    }
+    scope_list = scope_map.get(scope)
+
+    try:
+        report = _build(
+            question=question,
+            scope=scope_list,
+            since=since,
+            until=until,
+            max_loop_turns=max_turns,
+            model=model,
+            output_dir=DATA_DIR / "reports",
+            data_dir=DATA_DIR,
+        )
+    except Exception as e:
+        return {"error": f"report build failed: {type(e).__name__}: {e}"}
+
+    return {
+        "question": report.question,
+        "markdown_path": str(report.markdown_path),
+        "json_path": str(report.json_path),
+        "evidence_count": len(report.evidence),
+        "loop_turns": report.loop_turns,
+        "elapsed_seconds": report.elapsed_seconds,
+        "preview": report.markdown[:1500],
+    }
+
+
+@mcp.tool()
+def list_reports() -> dict:
+    """List all previously generated reports."""
+    reports_dir = DATA_DIR / "reports"
+    if not reports_dir.exists():
+        return {"reports": [], "count": 0}
+    items = []
+    for md in sorted(reports_dir.glob("*.md")):
+        json_path = md.with_suffix(".json")
+        items.append({
+            "slug": md.stem,
+            "markdown_path": str(md),
+            "json_path": str(json_path) if json_path.exists() else None,
+            "size_bytes": md.stat().st_size,
+            "modified_at": md.stat().st_mtime,
+        })
+    return {"reports": items, "count": len(items)}
+
+
+@mcp.tool()
+def get_saved_report(slug: str) -> dict:
+    """Read a previously generated report's markdown by slug."""
+    reports_dir = DATA_DIR / "reports"
+    md = reports_dir / f"{slug}.md"
+    if not md.exists():
+        return {"error": f"Report not found: {slug}"}
+    return {
+        "slug": slug,
+        "markdown": md.read_text(encoding="utf-8"),
+        "json_path": str(md.with_suffix(".json")) if md.with_suffix(".json").exists() else None,
+    }
 
 
 # ── Resources ───────────────────────────────────────────────────────────────

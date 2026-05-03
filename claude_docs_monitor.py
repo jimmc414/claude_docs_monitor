@@ -23,6 +23,8 @@ from pathlib import Path
 
 import httpx
 
+from llm_backend import call_claude
+
 try:
     from rich.console import Console
     from rich.table import Table
@@ -35,7 +37,7 @@ except ImportError:
 
 INDEX_URL = "https://code.claude.com/docs/llms.txt"
 BASE_URL = "https://code.claude.com"
-DB_DIR = Path("data")
+DB_DIR = Path("data-claude")
 DB_PATH = DB_DIR / "snapshots.db"
 MAX_CONCURRENT = 5
 MAX_RETRIES = 3
@@ -156,6 +158,14 @@ def get_two_snapshots(conn: sqlite3.Connection, url: str) -> tuple[sqlite3.Row |
     if len(rows) == 1:
         return rows[0], None
     return None, None
+
+
+def _get_snapshot_at(conn: sqlite3.Connection, url: str, timestamp: str) -> sqlite3.Row | None:
+    """Return the latest snapshot for url at or before timestamp."""
+    return conn.execute(
+        "SELECT * FROM page_snapshots WHERE url = ? AND fetched_at <= ? "
+        "ORDER BY fetched_at DESC LIMIT 1", (url, timestamp)
+    ).fetchone()
 
 
 def get_all_tracked_urls(conn: sqlite3.Connection) -> list[dict]:
@@ -882,13 +892,15 @@ async def cmd_check(args):
         save_diff_files(changes, args.save_diffs)
 
     # Always dump latest pages to disk
-    dump_dir = Path(getattr(args, "dump", None) or "data/pages")
+    dump_dir = Path(getattr(args, "dump", None) or "data-claude/pages")
     dump_dir.mkdir(parents=True, exist_ok=True)
     written = 0
     for result in results:
         if result["content"]:
             filename = url_to_filename(result["url"])
-            (dump_dir / filename).write_text(result["content"], encoding="utf-8")
+            filepath = dump_dir / filename
+            filepath.parent.mkdir(parents=True, exist_ok=True)
+            filepath.write_text(result["content"], encoding="utf-8")
             written += 1
     if HAS_RICH:
         console.print(f"[green]Updated {written} pages in {dump_dir}/[/green]")
@@ -915,6 +927,73 @@ async def cmd_check(args):
         console.print(f"[green]Reports written to {report_dir}/ (report + history)[/green]")
     else:
         print(f"Reports written to {report_dir}/ (report + history)")
+
+    # Auto-incremental reindex (only changed pages). Best-effort: failure
+    # here doesn't block check from completing — the user can run `reindex`
+    # manually if needed.
+    if not getattr(args, "no_reindex", False):
+        _try_incremental_reindex(report_dir, dump_dir, quiet=quiet)
+
+    # Auto-digest if --digest and changes were found
+    if getattr(args, "digest", False) and (changes or added_urls_display):
+        # Build a minimal args namespace for cmd_digest
+        digest_args = argparse.Namespace(
+            report=getattr(args, "report", None),
+            model=getattr(args, "digest_model", "sonnet"),
+            no_open=getattr(args, "no_open", False),
+            gh_issue=False,
+            gh_repo=None,
+            since=None,
+            until=None,
+            include_html=include_html,
+            backend=getattr(args, "backend", "auto"),
+            verbose=getattr(args, "verbose", False),
+        )
+        cmd_digest(digest_args)
+    elif getattr(args, "digest", False):
+        print("\nNo changes detected — skipping digest.")
+
+
+def _try_incremental_reindex(report_dir: Path, pages_dir: Path, quiet: bool = False):
+    """Best-effort: refresh chunk index for any changed pages.
+
+    Skipped silently if the optional RAG modules or embedding deps are
+    missing — the user opts in by running `reindex` first.
+    """
+    index_db = report_dir / "index.db"
+    emb_db = report_dir / "embeddings.db"
+    # Don't trigger first-time builds from cmd_check — only refresh if the
+    # user has already built the index. First-time setup must be opt-in
+    # because it can pull large embedding models or hit paid APIs.
+    if not index_db.exists():
+        return
+    try:
+        from doc_index import DocIndex
+        from embedding_cache import EmbeddingCache
+    except ImportError:
+        return
+    try:
+        embedder = EmbeddingCache(emb_db)
+        index = DocIndex(index_db, embedder=embedder)
+        # only_changed=True skips files whose content_hash matches the existing whole-page chunk
+        stats = index.reindex_pages(pages_dir, only_changed=True)
+        index.close()
+        embedder.close()
+        if not quiet and (stats["files"] or stats["chunks_inserted"] or stats["chunks_updated"]):
+            msg = (f"Reindexed {stats['files']} changed page(s): "
+                   f"+{stats['chunks_inserted']} chunks, "
+                   f"~{stats['chunks_updated']} chunks updated")
+            if HAS_RICH:
+                console.print(f"[dim]{msg}[/dim]")
+            else:
+                print(msg)
+    except Exception as e:
+        if not quiet:
+            msg = f"[skip auto-reindex: {type(e).__name__}: {e}]"
+            if HAS_RICH:
+                console.print(f"[dim yellow]{msg}[/dim yellow]")
+            else:
+                print(msg)
 
 
 async def cmd_check_poll(args):
@@ -1022,7 +1101,7 @@ def cmd_rebuild_history(args):
     """Rebuild history.html and history.md from all stored snapshots."""
     conn = init_db()
     include_html = getattr(args, "include_html", False)
-    output_dir = Path(getattr(args, "report", None) or "data")
+    output_dir = Path(getattr(args, "report", None) or "data-claude")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Delete existing history files
@@ -1164,7 +1243,9 @@ def cmd_dump(args):
         if not snap or not snap["content"]:
             continue
         filename = url_to_filename(row["url"])
-        (out_dir / filename).write_text(snap["content"], encoding="utf-8")
+        filepath = out_dir / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.write_text(snap["content"], encoding="utf-8")
         written += 1
 
     if HAS_RICH:
@@ -1178,28 +1259,63 @@ def cmd_dump(args):
 _DIGEST_INSTRUCTION = """\
 Analyze the Claude Code documentation diffs provided on stdin and produce a concise change digest.
 
+IMPORTANT: Each diff section header contains the source URL (e.g. "### https://code.claude.com/docs/en/hooks.md").
+For every bullet point, append the source doc URL as a markdown link. Format: `- Description ([page](URL))`
+
 Format your response exactly as:
 
 ### Executive Summary
 2-3 sentences on what changed and why it matters.
 
 ### New Features
-- Feature name: one-line description
+- Feature name: one-line description ([page-name](source-url))
 
 ### Breaking Changes
-- What changed and what to do about it
+- What changed and what to do about it ([page-name](source-url))
 
 ### Deprecations
-- What's being phased out
+- What's being phased out ([page-name](source-url))
 
 ### Flag & API Changes
-- New/renamed/removed CLI flags or settings
+- New/renamed/removed CLI flags or settings ([page-name](source-url))
 
 ### Notable Clarifications
-- Documentation improvements worth knowing about
+- Documentation improvements worth knowing about ([page-name](source-url))
 
 ### Action Items
-- [ ] Specific things to update in your workflows
+- [ ] Specific things to update in your workflows ([page-name](source-url))
+
+Omit any section that has no items. Be concise — bullet points, not paragraphs."""
+
+_HISTORICAL_DIGEST_INSTRUCTION = """\
+Analyze the cumulative Claude Code documentation changes shown below.
+These diffs represent the net changes over a date range (not a single update).
+
+IMPORTANT: Each diff section header contains the source URL (e.g. "### https://code.claude.com/docs/en/hooks.md").
+For every bullet point, append the source doc URL as a markdown link. Format: `- Description ([page](URL))`
+
+Format your response exactly as:
+
+### Executive Summary
+2-3 sentences on what changed and why it matters. Mention the time range.
+
+### New Features
+- Feature name: one-line description ([page-name](source-url))
+
+### Breaking Changes
+- What changed and what to do about it ([page-name](source-url))
+
+### Deprecations
+- What's being phased out ([page-name](source-url))
+
+### Flag & API Changes
+- New/renamed/removed CLI flags or settings ([page-name](source-url))
+
+### Notable Clarifications
+- Documentation improvements worth knowing about ([page-name](source-url))
+
+### Action Items
+- [ ] Specific things to update in your workflows ([page-name](source-url))
 
 Omit any section that has no items. Be concise — bullet points, not paragraphs."""
 
@@ -1303,6 +1419,21 @@ def _parse_relative_date(date_str: str) -> str:
     return date_str.strip()
 
 
+def _md_to_html_inline(text: str) -> str:
+    """Convert markdown inline formatting to HTML: links, bold, code."""
+    # Escape HTML first, then convert markdown patterns
+    text = _esc_html(text)
+    # Convert markdown links: [text](url) → <a href="url">text</a>
+    text = re.sub(
+        r'\[([^\]]+)\]\((https?://[^)]+)\)',
+        r'<a href="\2" target="_blank">\1</a>', text)
+    # Convert bold: **text** → <strong>text</strong>
+    text = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', text)
+    # Convert inline code: `text` → <code>text</code>
+    text = re.sub(r'`([^`]+)`', r'<code>\1</code>', text)
+    return text
+
+
 def _generate_digest_html(digest_md: str, output_dir: Path):
     """Write a self-contained HTML digest to output_dir/digest.html."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1316,27 +1447,27 @@ def _generate_digest_html(digest_md: str, output_dir: Path):
             if in_list:
                 body_lines.append("</ul>")
                 in_list = False
-            body_lines.append(f"<h3>{_esc_html(stripped[4:])}</h3>")
+            body_lines.append(f"<h3>{_md_to_html_inline(stripped[4:])}</h3>")
         elif stripped.startswith("## "):
             if in_list:
                 body_lines.append("</ul>")
                 in_list = False
-            body_lines.append(f"<h2>{_esc_html(stripped[3:])}</h2>")
+            body_lines.append(f"<h2>{_md_to_html_inline(stripped[3:])}</h2>")
         elif stripped.startswith("- [ ] "):
             if not in_list:
                 body_lines.append("<ul>")
                 in_list = True
-            body_lines.append(f"<li><input type='checkbox' disabled> {_esc_html(stripped[6:])}</li>")
+            body_lines.append(f"<li><input type='checkbox' disabled> {_md_to_html_inline(stripped[6:])}</li>")
         elif stripped.startswith("- "):
             if not in_list:
                 body_lines.append("<ul>")
                 in_list = True
-            body_lines.append(f"<li>{_esc_html(stripped[2:])}</li>")
+            body_lines.append(f"<li>{_md_to_html_inline(stripped[2:])}</li>")
         elif stripped:
             if in_list:
                 body_lines.append("</ul>")
                 in_list = False
-            body_lines.append(f"<p>{_esc_html(stripped)}</p>")
+            body_lines.append(f"<p>{_md_to_html_inline(stripped)}</p>")
     if in_list:
         body_lines.append("</ul>")
 
@@ -1352,8 +1483,45 @@ def _generate_digest_html(digest_md: str, output_dir: Path):
     (output_dir / "digest.html").write_text(html, encoding="utf-8")
 
 
+def _compute_range_diffs(conn, since_iso, until_iso=None, include_html=False):
+    """Compute net diffs for all pages between two timestamps.
+
+    Returns (diffs_text, stats) where stats has changed/new/total counts.
+    """
+    if until_iso is None:
+        until_iso = datetime.now(timezone.utc).isoformat()
+
+    urls = [r["url"] for r in get_all_tracked_urls(conn)]
+    diffs_parts = []
+    changed = 0
+    new_in_range = 0
+
+    for url in urls:
+        old = _get_snapshot_at(conn, url, since_iso)
+        new = _get_snapshot_at(conn, url, until_iso)
+        if new is None:
+            continue
+        if old is None:
+            # Page was added after the window start
+            new_in_range += 1
+            diffs_parts.append(f"### {url}\n\n*New page (first seen after {since_iso[:10]})*\n")
+            continue
+        if old["hash"] == new["hash"]:
+            continue
+        diff_text = compute_diff(old["content"], new["content"], url)
+        if not diff_text.strip():
+            continue
+        if not include_html and is_html_diff(diff_text):
+            continue
+        changed += 1
+        diffs_parts.append(f"### {url}\n\n```diff\n{diff_text}\n```\n")
+
+    stats = {"changed": changed, "new_in_range": new_in_range, "total": len(urls)}
+    return "\n".join(diffs_parts), stats
+
+
 def _run_structured_classification(report_text: str, diffs: str, model: str, env: dict,
-                                   report_dir: Path) -> list[dict] | None:
+                                   report_dir: Path, backend: str = "auto") -> list[dict] | None:
     """Run structured JSON classification of changes. Returns list of events or None on failure."""
     run_timestamp = _extract_report_timestamp(report_text) or utcnow()
     conn = init_db(report_dir / "snapshots.db" if (report_dir / "snapshots.db").exists() else DB_PATH)
@@ -1379,23 +1547,19 @@ def _run_structured_classification(report_text: str, diffs: str, model: str, env
         print("Running structured classification...")
 
     try:
-        result = subprocess.run(
-            ["claude", "-p", _STRUCTURED_DIGEST_INSTRUCTION, "--model", model,
-             "--max-turns", "1", "--output-format", "json",
-             "--json-schema", _STRUCTURED_DIGEST_SCHEMA],
-            input=stdin_text,
-            capture_output=True, text=True, timeout=300, env=env,
+        raw = call_claude(
+            prompt=_STRUCTURED_DIGEST_INSTRUCTION,
+            stdin=stdin_text,
+            model=model,
+            json_schema=_STRUCTURED_DIGEST_SCHEMA,
+            backend=backend,
+            timeout=300,
+            env=env,
         )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+    except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError) as exc:
         print(f"Warning: structured classification failed ({exc}). Continuing with text digest.")
         return None
 
-    if result.returncode != 0:
-        print(f"Warning: structured classification exited with code {result.returncode}. "
-              f"Continuing with text digest.")
-        return None
-
-    raw = result.stdout.strip()
     if not raw:
         print("Warning: structured classification returned empty output. Continuing with text digest.")
         return None
@@ -1502,59 +1666,92 @@ def _create_gh_issues(report_text: str, report_dir: Path, gh_repo: str | None = 
 def cmd_digest(args):
     """AI-analyze latest diffs into an actionable digest."""
     report_dir = Path(args.report) if args.report else DB_DIR
-    report_path = report_dir / "report.md"
+    since = getattr(args, "since", None)
+    historical = False
 
-    if not report_path.exists():
-        print("No report found. Run 'check' first to generate a report.")
-        sys.exit(1)
+    if since:
+        # Historical digest mode — compute diffs from snapshot DB
+        historical = True
+        db_path = report_dir / "snapshots.db"
+        if not db_path.exists():
+            print("No database found. Run 'check' first.")
+            sys.exit(1)
+        conn = init_db(db_path)
+        since_iso = _parse_relative_date(since)
+        until_raw = getattr(args, "until", None)
+        until_iso = _parse_relative_date(until_raw) if until_raw else datetime.now(timezone.utc).isoformat()
+        include_html = getattr(args, "include_html", False)
 
-    report_text = report_path.read_text(encoding="utf-8")
+        diffs, stats = _compute_range_diffs(conn, since_iso, until_iso, include_html)
+        if not diffs.strip():
+            print(f"No changes found between {since_iso[:10]} and {until_iso[:10]}.")
+            return
 
-    # Check for no changes
-    if "| Changed | 0 |" in report_text and "| Added | 0 |" in report_text:
-        print("No changes to digest.")
-        return
+        since_label = since_iso[:10]
+        until_label = until_iso[:10]
+        print(f"Found {stats['changed']} changed and {stats['new_in_range']} new page(s) "
+              f"between {since_label} and {until_label}.")
 
-    # Extract diffs section to minimize token usage
-    diffs_marker = "\n## Diffs\n"
-    if diffs_marker in report_text:
-        diffs = report_text[report_text.index(diffs_marker) + len(diffs_marker):]
+        digest_instruction = _HISTORICAL_DIGEST_INSTRUCTION
+        stdin_text = (f"## Changes from {since_label} to {until_label}\n\n"
+                      f"{stats['changed']} pages changed, {stats['new_in_range']} new pages "
+                      f"(out of {stats['total']} tracked)\n\n{diffs}")
     else:
-        # No diffs section — might be added/removed pages only
-        diffs = report_text
+        # Existing behavior — read report.md
+        report_path = report_dir / "report.md"
 
-    if not diffs.strip():
-        print("No diffs found in report.")
-        return
+        if not report_path.exists():
+            print("No report found. Run 'check' first to generate a report.")
+            sys.exit(1)
 
-    # Check that claude CLI is available
-    if not shutil.which("claude"):
-        print("Error: 'claude' CLI not found in PATH.")
-        print("Install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
-        sys.exit(1)
+        report_text = report_path.read_text(encoding="utf-8")
+
+        # Check for no changes
+        if "| Changed | 0 |" in report_text and "| Added | 0 |" in report_text:
+            print("No changes to digest.")
+            return
+
+        # Extract diffs section to minimize token usage
+        diffs_marker = "\n## Diffs\n"
+        if diffs_marker in report_text:
+            diffs = report_text[report_text.index(diffs_marker) + len(diffs_marker):]
+        else:
+            diffs = report_text
+
+        if not diffs.strip():
+            print("No diffs found in report.")
+            return
+
+        digest_instruction = _DIGEST_INSTRUCTION
+        stdin_text = f"## Diffs to analyze:\n\n{diffs}"
+
+    backend = getattr(args, "backend", "auto")
+    if getattr(args, "verbose", False):
+        os.environ["DOCS_MONITOR_VERBOSE"] = "1"
 
     model = getattr(args, "model", "sonnet")
 
     # Allow running inside a Claude Code session (nested invocation)
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
-    # Phase 1: Structured classification (stores events in DB)
-    _run_structured_classification(report_text, diffs, model, env, report_dir)
+    # Phase 1: Structured classification (skip for historical — events already exist per-run)
+    if not historical:
+        _run_structured_classification(report_text, diffs, model, env, report_dir, backend=backend)
 
-    # Phase 2: Text digest (existing behavior)
-    stdin_text = f"## Diffs to analyze:\n\n{diffs}"
-
+    # Phase 2: Text digest
     if HAS_RICH:
         console.print("[bold blue]Generating AI digest...[/bold blue]")
     else:
         print("Generating AI digest...")
 
     try:
-        result = subprocess.run(
-            ["claude", "-p", _DIGEST_INSTRUCTION, "--model", model,
-             "--max-turns", "1", "--output-format", "text"],
-            input=stdin_text,
-            capture_output=True, text=True, timeout=300, env=env,
+        digest_text = call_claude(
+            prompt=digest_instruction,
+            stdin=stdin_text,
+            model=model,
+            backend=backend,
+            timeout=300,
+            env=env,
         )
     except subprocess.TimeoutExpired:
         print("Error: claude CLI timed out after 300 seconds.")
@@ -1562,16 +1759,12 @@ def cmd_digest(args):
     except FileNotFoundError:
         print("Error: 'claude' CLI not found.")
         sys.exit(1)
-
-    if result.returncode != 0:
-        print(f"Error: claude CLI exited with code {result.returncode}")
-        if result.stderr:
-            print(result.stderr[:500])
+    except RuntimeError as exc:
+        print(f"Error: {exc}")
         sys.exit(1)
 
-    digest_text = result.stdout.strip()
     if not digest_text:
-        print("Error: claude CLI returned empty output.")
+        print("Error: empty output from LLM backend.")
         sys.exit(1)
 
     # Write outputs
@@ -1607,8 +1800,8 @@ def cmd_digest(args):
         except Exception:
             pass  # Non-critical — don't fail if no browser available
 
-    # Phase 3: GitHub issue creation (if requested)
-    if getattr(args, "gh_issue", False):
+    # Phase 3: GitHub issue creation (if requested, skip for historical)
+    if not historical and getattr(args, "gh_issue", False):
         gh_repo = getattr(args, "gh_repo", None)
         _create_gh_issues(report_text, report_dir, gh_repo)
 
@@ -1725,6 +1918,9 @@ def cmd_backfill(args):
     model = getattr(args, "model", "sonnet")
     dry_run = getattr(args, "dry_run", False)
     include_html = getattr(args, "include_html", False)
+    backend = getattr(args, "backend", "auto")
+    if getattr(args, "verbose", False):
+        os.environ["DOCS_MONITOR_VERBOSE"] = "1"
 
     # Get all index snapshots in order
     index_rows = conn.execute(
@@ -1734,10 +1930,6 @@ def cmd_backfill(args):
     if not index_rows:
         print("No snapshots in database. Run 'check' first.")
         return
-
-    if not shutil.which("claude") and not dry_run:
-        print("Error: 'claude' CLI not found in PATH.")
-        sys.exit(1)
 
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
 
@@ -1846,15 +2038,17 @@ def cmd_backfill(args):
                 print(f"Classifying run {run['timestamp']}...")
 
             try:
-                result = subprocess.run(
-                    ["claude", "-p", _STRUCTURED_DIGEST_INSTRUCTION, "--model", model,
-                     "--max-turns", "1", "--output-format", "json",
-                     "--json-schema", _STRUCTURED_DIGEST_SCHEMA],
-                    input=stdin_text,
-                    capture_output=True, text=True, timeout=300, env=env,
+                raw = call_claude(
+                    prompt=_STRUCTURED_DIGEST_INSTRUCTION,
+                    stdin=stdin_text,
+                    model=model,
+                    json_schema=_STRUCTURED_DIGEST_SCHEMA,
+                    backend=backend,
+                    timeout=300,
+                    env=env,
                 )
-                if result.returncode == 0 and result.stdout.strip():
-                    parsed = json.loads(result.stdout.strip())
+                if raw:
+                    parsed = json.loads(raw)
                     if isinstance(parsed, dict) and "result" in parsed and isinstance(parsed["result"], str):
                         parsed = json.loads(parsed["result"])
                     events = parsed.get("events", [])
@@ -1864,7 +2058,7 @@ def cmd_backfill(args):
                                            diff_text=diff_text, ai_result=ev)
                 else:
                     print(f"  Warning: classification failed for {run['timestamp']}")
-            except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            except (RuntimeError, subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as exc:
                 print(f"  Warning: classification failed for {run['timestamp']}: {exc}")
 
         # Store added/removed pages
@@ -1890,6 +2084,205 @@ def cmd_backfill(args):
         console.print(f"\n[green]Backfilled {classified} run(s) into change_events table.[/green]")
     else:
         print(f"\nBackfilled {classified} run(s) into change_events table.")
+
+
+# ── RAG Layer Commands (M1-M5) ──────────────────────────────────────────────
+
+
+def _rag_paths(report_dir: Path | None = None) -> tuple[Path, Path, Path, Path]:
+    """Return (data_dir, index_db, embeddings_db, snapshots_db)."""
+    data_dir = Path(report_dir) if report_dir else DB_DIR
+    return (
+        data_dir,
+        data_dir / "index.db",
+        data_dir / "embeddings.db",
+        data_dir / "snapshots.db",
+    )
+
+
+def cmd_reindex(args):
+    """Build or refresh the chunk index and embedding cache."""
+    from doc_index import DocIndex
+    from embedding_cache import EmbeddingCache
+
+    data_dir, index_db, emb_db, snap_db = _rag_paths(getattr(args, "report", None))
+    pages_dir = data_dir / "pages"
+
+    if getattr(args, "verbose", False):
+        os.environ.setdefault("DOCS_MONITOR_INDEX_VERBOSE", "1")
+        os.environ.setdefault("DOCS_MONITOR_EMBED_VERBOSE", "1")
+        os.environ.setdefault("DOCS_MONITOR_VERBOSE", "1")
+
+    provider = getattr(args, "provider", None)
+    model = getattr(args, "model", None)
+    embedder = EmbeddingCache(emb_db, provider=provider, model=model)
+    index = DocIndex(index_db, embedder=embedder)
+
+    source = getattr(args, "source", "all")
+    regen = getattr(args, "regen_summaries", False)
+    skip_summaries = getattr(args, "skip_summaries", False)
+    skip_embeddings = getattr(args, "skip_embeddings", False)
+
+    if skip_summaries:
+        index._generate_summaries = lambda force=False, batch_size=10: 0
+    if skip_embeddings:
+        index._embed_outstanding = lambda: (0, 0)
+        index.embedder = None
+
+    if HAS_RICH:
+        console.print(f"[bold]Reindexing source={source}[/bold] "
+                      f"(provider={embedder.provider}, model={embedder.model})")
+    else:
+        print(f"Reindexing source={source} "
+              f"(provider={embedder.provider}, model={embedder.model})")
+
+    if source in ("page", "all"):
+        if not pages_dir.exists():
+            print(f"  [skip] {pages_dir} does not exist; run `check` first.")
+        else:
+            stats = index.reindex_pages(pages_dir, regenerate_summaries=regen)
+            print(f"  pages: {stats}")
+
+    if source in ("change_event", "all"):
+        if snap_db.exists():
+            stats = index.reindex_change_events(snap_db)
+            print(f"  change_events: {stats}")
+        else:
+            print(f"  [skip] {snap_db} does not exist; nothing to index.")
+
+    print()
+    print("Index stats:", index.stats())
+    print("Cache stats:", embedder.stats())
+    embedder.close()
+    index.close()
+
+
+def cmd_search(args):
+    """One-shot hybrid search; pretty-print top-K with provenance."""
+    from doc_index import DocIndex
+    from embedding_cache import EmbeddingCache
+    from retriever import HybridRetriever
+
+    data_dir, index_db, emb_db, _ = _rag_paths(getattr(args, "report", None))
+    if not index_db.exists():
+        print(f"Index not built. Run: python {sys.argv[0]} reindex")
+        return
+
+    if getattr(args, "verbose", False):
+        os.environ.setdefault("DOCS_MONITOR_RETRIEVAL_VERBOSE", "1")
+        os.environ.setdefault("DOCS_MONITOR_VERBOSE", "1")
+
+    embedder = EmbeddingCache(emb_db)
+    index = DocIndex(index_db, embedder=embedder)
+    retriever = HybridRetriever(index, embedder)
+
+    filters: dict = {}
+    if getattr(args, "category", None):
+        filters["category"] = args.category
+    if getattr(args, "severity", None):
+        filters["severity"] = args.severity
+    if getattr(args, "page", None):
+        filters["page"] = args.page
+    if getattr(args, "since", None):
+        filters["since"] = _parse_relative_date(args.since)
+    if getattr(args, "until", None):
+        filters["until"] = _parse_relative_date(args.until)
+
+    source_type = getattr(args, "source", None)
+    if source_type == "all":
+        source_type = None
+
+    hits = retriever.retrieve(
+        args.query,
+        source_type=source_type,
+        filters=filters or None,
+        k=getattr(args, "k", 10),
+        expand_query=not getattr(args, "no_expand", False),
+        use_hyde=getattr(args, "hyde", False),
+        rerank=not getattr(args, "no_rerank", False),
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps([h.to_dict() for h in hits], indent=2))
+        return
+
+    if not hits:
+        print(f"No results for: {args.query}")
+        return
+
+    if HAS_RICH:
+        console.print(f"\n[bold]Top {len(hits)} results for:[/bold] {args.query}\n")
+    else:
+        print(f"\nTop {len(hits)} results for: {args.query}\n")
+
+    for i, h in enumerate(hits, 1):
+        rerank_str = f" rerank={h.score_rerank:.1f}" if h.score_rerank is not None else ""
+        loc = ""
+        if h.line_start and h.line_end:
+            loc = f" (L{h.line_start}-{h.line_end})"
+        header = (
+            f"{i}. [{h.source_type}] {h.heading_path}{loc}"
+            f"  bm25={h.score_bm25:.2f} dense={h.score_dense:.2f}"
+            f" sum={h.score_summary:.2f}{rerank_str}"
+        )
+        if HAS_RICH:
+            console.print(f"[bold cyan]{header}[/bold cyan]")
+        else:
+            print(header)
+        snippet = h.content[:300].strip()
+        if len(h.content) > 300:
+            snippet += "..."
+        print(f"   {snippet}\n")
+
+    embedder.close()
+    index.close()
+
+
+def cmd_report(args):
+    """Build a research report with the agentic RAG loop."""
+    from report_builder import build_report
+
+    data_dir, _, _, _ = _rag_paths(getattr(args, "report", None))
+
+    if getattr(args, "verbose", False):
+        os.environ.setdefault("DOCS_MONITOR_RETRIEVAL_VERBOSE", "1")
+        os.environ.setdefault("DOCS_MONITOR_VERBOSE", "1")
+        os.environ.setdefault("DOCS_MONITOR_REPORT_VERBOSE", "1")
+
+    scope_arg = getattr(args, "scope", "all")
+    scope_map = {
+        "docs": ["page"],
+        "changes": ["change_event"],
+        "all": ["page", "change_event"],
+    }
+    scope = scope_map.get(scope_arg, None)
+
+    output_dir = Path(getattr(args, "output", None) or (data_dir / "reports"))
+
+    report = build_report(
+        question=args.question,
+        scope=scope,
+        since=getattr(args, "since", None),
+        until=getattr(args, "until", None),
+        max_loop_turns=getattr(args, "max_turns", 6),
+        model=getattr(args, "model", "opus"),
+        do_self_critique=not getattr(args, "no_self_critique", False),
+        output_dir=output_dir,
+        data_dir=data_dir,
+    )
+
+    if HAS_RICH:
+        console.print(f"\n[green]Report written:[/green] {report.markdown_path}")
+        console.print(f"[dim]Evidence JSON:[/dim] {report.json_path}")
+        console.print(f"[dim]Loop turns: {report.loop_turns}, evidence: "
+                      f"{len(report.evidence)} chunks, elapsed: "
+                      f"{report.elapsed_seconds:.1f}s[/dim]")
+    else:
+        print(f"\nReport written: {report.markdown_path}")
+        print(f"Evidence JSON: {report.json_path}")
+        print(f"Loop turns: {report.loop_turns}, evidence: "
+              f"{len(report.evidence)} chunks, elapsed: "
+              f"{report.elapsed_seconds:.1f}s")
 
 
 def cmd_urls(args):
@@ -1932,17 +2325,17 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Monitor Claude Code documentation (code.claude.com/docs/) for changes.",
         epilog="""examples:
-  %(prog)s                              fetch all pages, show diffs, update data/pages/
+  %(prog)s                              fetch all pages, show diffs, update data-claude/pages/
   %(prog)s check --quiet                summary table only, no inline diffs
   %(prog)s check --save-diffs out/      also write .diff files to out/
-  %(prog)s check --dump ~/docs          dump pages to ~/docs instead of data/pages/
+  %(prog)s check --dump ~/docs          dump pages to ~/docs instead of data-claude/pages/
   %(prog)s check --poll 3600            re-check every hour
   %(prog)s history                      show recent snapshot history (all pages)
   %(prog)s history URL                  show history for one page
   %(prog)s diff URL                     show diff between last two snapshots of a page
   %(prog)s urls                         list all tracked URLs with status
   %(prog)s rebuild-history               regenerate history files from DB
-  %(prog)s dump                         export latest snapshots to data/pages/
+  %(prog)s dump                         export latest snapshots to data-claude/pages/
   %(prog)s dump ~/review                export to a custom directory
   %(prog)s digest                       AI-analyze latest diffs into an actionable digest
   %(prog)s digest --model opus          use a different model for analysis
@@ -1952,7 +2345,13 @@ def build_parser() -> argparse.ArgumentParser:
   %(prog)s query "hooks" --severity high  keyword search with severity filter
   %(prog)s query --json | jq .          machine-readable output
   %(prog)s backfill                     classify historical changes with AI
-  %(prog)s backfill --dry-run           preview what would be classified""",
+  %(prog)s backfill --dry-run           preview what would be classified
+  %(prog)s reindex                      build hybrid retrieval index (chunks + embeddings)
+  %(prog)s reindex --source page        only reindex documentation pages
+  %(prog)s search "how do hooks work"   hybrid BM25+dense semantic search
+  %(prog)s search QUERY --no-rerank     skip the LLM rerank step (faster, cheaper)
+  %(prog)s report "what changed about hooks last month"
+                                        agentic RAG report with inline citations""",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -1962,7 +2361,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch all pages, detect changes, show diffs, update local copies (default)",
         description="Fetch every doc page, compare against the previous snapshot, "
                     "display a change summary with unified diffs, and update "
-                    "the local .md files in data/pages/.",
+                    "the local .md files in data-claude/pages/.",
     )
     check_p.add_argument(
         "--save-diffs", metavar="DIR",
@@ -1978,15 +2377,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_p.add_argument(
         "--dump", metavar="DIR",
-        help="Override page dump directory (default: data/pages)",
+        help="Override page dump directory (default: data-claude/pages)",
     )
     check_p.add_argument(
         "--report", metavar="DIR",
-        help="Override report output directory (default: data/)",
+        help="Override report output directory (default: data-claude/)",
     )
     check_p.add_argument(
         "--include-html", action="store_true",
         help="Include diffs that are predominantly HTML/script noise (suppressed by default)",
+    )
+    check_p.add_argument(
+        "--digest", action="store_true",
+        help="Auto-run AI digest if changes are detected",
+    )
+    check_p.add_argument(
+        "--digest-model", default="sonnet", metavar="MODEL",
+        help="Model for auto-digest (default: sonnet)",
+    )
+    check_p.add_argument(
+        "--no-open", action="store_true",
+        help="Don't open digest.html in browser (only with --digest)",
+    )
+    check_p.add_argument(
+        "--backend", choices=["auto", "sdk", "cli", "api"], default="auto",
+        help="LLM backend for --digest (default: auto = sdk → cli → api)",
+    )
+    check_p.add_argument(
+        "--verbose", action="store_true",
+        help="Print which LLM backend is in use to stderr",
+    )
+    check_p.add_argument(
+        "--no-reindex", action="store_true",
+        help="Skip auto-incremental reindex of changed pages (RAG layer)",
     )
 
     # history
@@ -2016,7 +2439,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rebuild_p.add_argument(
         "--report", metavar="DIR",
-        help="Override report output directory (default: data/)",
+        help="Override report output directory (default: data-claude/)",
     )
     rebuild_p.add_argument(
         "--include-html", action="store_true",
@@ -2029,8 +2452,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Export latest page snapshots as .md files (from DB, no network)",
     )
     dump_p.add_argument(
-        "dir", nargs="?", default="data/pages",
-        help="Output directory (default: data/pages)",
+        "dir", nargs="?", default="data-claude/pages",
+        help="Output directory (default: data-claude/pages)",
     )
 
     # digest
@@ -2040,7 +2463,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     digest_p.add_argument(
         "--report", metavar="DIR",
-        help="Report directory (default: data/)",
+        help="Report directory (default: data-claude/)",
     )
     digest_p.add_argument(
         "--model", default="sonnet",
@@ -2057,6 +2480,26 @@ def build_parser() -> argparse.ArgumentParser:
     digest_p.add_argument(
         "--no-open", action="store_true",
         help="Don't open digest.html in browser after generation",
+    )
+    digest_p.add_argument(
+        "--since", metavar="DATE",
+        help="Digest changes since DATE (e.g. '7d', '30d', '2025-02-01')",
+    )
+    digest_p.add_argument(
+        "--until", metavar="DATE",
+        help="Digest changes until DATE (default: now). Same formats as --since",
+    )
+    digest_p.add_argument(
+        "--include-html", action="store_true",
+        help="Include HTML-heavy diffs (normally suppressed as noise)",
+    )
+    digest_p.add_argument(
+        "--backend", choices=["auto", "sdk", "cli", "api"], default="auto",
+        help="LLM backend (default: auto = sdk → cli → api)",
+    )
+    digest_p.add_argument(
+        "--verbose", action="store_true",
+        help="Print which LLM backend is in use to stderr",
     )
 
     # query
@@ -2116,6 +2559,127 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-html", action="store_true",
         help="Include diffs that are predominantly HTML/script noise",
     )
+    backfill_p.add_argument(
+        "--backend", choices=["auto", "sdk", "cli", "api"], default="auto",
+        help="LLM backend (default: auto = sdk → cli → api)",
+    )
+    backfill_p.add_argument(
+        "--verbose", action="store_true",
+        help="Print which LLM backend is in use to stderr",
+    )
+
+    # reindex
+    reindex_p = sub.add_parser(
+        "reindex",
+        help="Build or refresh the hybrid retrieval index (chunks + embeddings)",
+        description="Chunk pages and change_events, store in index.db, embed via "
+                    "the configured provider. Idempotent: re-runs are no-ops on "
+                    "unchanged content (hash-keyed embedding cache).",
+    )
+    reindex_p.add_argument(
+        "--source", choices=["page", "change_event", "all"], default="all",
+        help="Which source to reindex (default: all)",
+    )
+    reindex_p.add_argument(
+        "--regen-summaries", action="store_true",
+        help="Force regeneration of all chunk summaries (otherwise only missing)",
+    )
+    reindex_p.add_argument(
+        "--skip-summaries", action="store_true",
+        help="Skip LLM summary generation (faster; summaries can be added later)",
+    )
+    reindex_p.add_argument(
+        "--skip-embeddings", action="store_true",
+        help="Skip embedding generation (chunks only; useful for BM25-only setups)",
+    )
+    reindex_p.add_argument(
+        "--provider", choices=["voyage", "openai", "ollama"],
+        help="Embedding provider (default: voyage; env DOCS_MONITOR_EMBED_PROVIDER overrides)",
+    )
+    reindex_p.add_argument(
+        "--model", metavar="MODEL",
+        help="Embedding model name (provider-specific; uses provider default if unset)",
+    )
+    reindex_p.add_argument(
+        "--report", metavar="DIR",
+        help="Data directory (default: data-claude/)",
+    )
+    reindex_p.add_argument(
+        "--verbose", action="store_true",
+        help="Print embedding/index/backend info to stderr",
+    )
+
+    # search
+    search_p = sub.add_parser(
+        "search",
+        help="Hybrid BM25+dense semantic search with optional rerank",
+        description="One-shot retrieval using the same pipeline as /ask-docs. "
+                    "Combines BM25 (FTS5), dense cosine on raw and summary "
+                    "vectors, RRF fusion, and Claude rerank.",
+    )
+    search_p.add_argument("query", help="The search query")
+    search_p.add_argument(
+        "--source", choices=["page", "change_event", "all"], default="all",
+        help="Filter to one source type (default: all)",
+    )
+    search_p.add_argument("--category", help="Filter by change category (change_event only)")
+    search_p.add_argument("--severity", help="Filter by severity")
+    search_p.add_argument("--page", help="Filter by page name (LIKE match)")
+    search_p.add_argument("--since", metavar="DATE", help="Filter by date ('7d', '30d', YYYY-MM-DD)")
+    search_p.add_argument("--until", metavar="DATE", help="Filter by upper date")
+    search_p.add_argument("--k", type=int, default=10, help="Number of results (default: 10)")
+    search_p.add_argument("--no-rerank", action="store_true", help="Skip LLM rerank")
+    search_p.add_argument("--no-expand", action="store_true", help="Skip query expansion")
+    search_p.add_argument("--hyde", action="store_true", help="Enable HyDE (slower)")
+    search_p.add_argument("--json", action="store_true", help="Output JSON")
+    search_p.add_argument(
+        "--report", metavar="DIR",
+        help="Data directory (default: data-claude/)",
+    )
+    search_p.add_argument(
+        "--verbose", action="store_true",
+        help="Print retrieval/backend info to stderr",
+    )
+
+    # report
+    report_p = sub.add_parser(
+        "report",
+        help="Build an agentic RAG research report with inline citations",
+        description="Decompose the question, retrieve evidence, reason in a "
+                    "tool-equipped loop, synthesize with citations, self-critique. "
+                    "Uses Claude Opus by default (Max OAuth via SDK = effectively free).",
+    )
+    report_p.add_argument("question", help="Your research question")
+    report_p.add_argument(
+        "--scope", choices=["docs", "changes", "all"], default="all",
+        help="Which sources to draw from (default: all)",
+    )
+    report_p.add_argument("--since", metavar="DATE", help="Restrict evidence to date >= DATE")
+    report_p.add_argument("--until", metavar="DATE", help="Restrict evidence to date <= DATE")
+    report_p.add_argument(
+        "--model", default="opus",
+        help="LLM model for the loop (default: opus; aliases: sonnet, haiku, opus)",
+    )
+    report_p.add_argument(
+        "--max-turns", type=int, default=6,
+        help="Maximum tool-use turns in the agentic loop (default: 6)",
+    )
+    report_p.add_argument(
+        "--no-self-critique", action="store_true",
+        help="Skip the self-critique pass (faster, less rigorous)",
+    )
+    report_p.add_argument(
+        "--output", metavar="PATH",
+        help="Output directory (default: data-claude/reports/)",
+    )
+    report_p.add_argument(
+        "--report", metavar="DIR",
+        help="Data directory for source DBs (default: data-claude/)",
+    )
+    report_p.add_argument(
+        "--verbose", action="store_true",
+        help="Print retrieval/backend info to stderr",
+    )
 
     return parser
 
@@ -2133,6 +2697,8 @@ def main():
         args.dump = None
         args.report = None
         args.include_html = False
+        args.backend = "auto"
+        args.verbose = False
 
     if args.command == "check":
         if args.poll:
@@ -2155,6 +2721,12 @@ def main():
         cmd_query(args)
     elif args.command == "backfill":
         cmd_backfill(args)
+    elif args.command == "reindex":
+        cmd_reindex(args)
+    elif args.command == "search":
+        cmd_search(args)
+    elif args.command == "report":
+        cmd_report(args)
 
 
 if __name__ == "__main__":

@@ -1,2 +1,7 @@
 httpx[http2]>=0.27,<1.0
-# Optional: rich (colored output), mcp (MCP server — see requirements-mcp.txt)
+# Optional extras (each in its own requirements file):
+#   rich                     — colored output, progress bars
+#   requirements-sdk.txt     — Claude Agent SDK backend (recommended for digest/backfill/report)
+#   requirements-api.txt     — Anthropic API backend (opt-in, billed)
+#   requirements-mcp.txt     — MCP server
+#   requirements-rag.txt     — hybrid retrieval (reindex/search/report) — numpy + embedding provider

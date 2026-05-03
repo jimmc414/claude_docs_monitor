@@ -36,6 +36,31 @@ pip install -r requirements.txt
 
 One dependency: `httpx` with HTTP/2 support. `rich` is optional (colored output, progress bars).
 
+### LLM backend (for `digest` and `backfill`)
+
+The `digest` and `backfill` commands call Claude. They route through a tiered backend dispatcher and pick the first available of:
+
+| Backend | When it's used | Install |
+|---------|----------------|---------|
+| `sdk`   | Preferred — lighter and faster than CLI | `pip install -r requirements-sdk.txt` |
+| `cli`   | Fallback — works without optional deps | install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) |
+| `api`   | Opt-in only — activates when `ANTHROPIC_API_KEY` is set | `pip install -r requirements-api.txt` and `export ANTHROPIC_API_KEY=…` |
+
+Without `ANTHROPIC_API_KEY`, the `api` tier is never chosen — no API spend can occur. Both `sdk` and `cli` authenticate via Max OAuth (`~/.claude/.credentials.json`). The dispatcher strips `ANTHROPIC_API_KEY` from the environment before invoking `sdk` or `cli` so OAuth is honored even if the key happens to be set.
+
+Force a backend explicitly:
+```
+python claude_docs_monitor.py digest --backend sdk
+python claude_docs_monitor.py digest --backend cli
+python claude_docs_monitor.py digest --backend api
+```
+
+`--verbose` (or `DOCS_MONITOR_VERBOSE=1`) prints which backend is in use:
+```
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+```
+
 ## Usage
 
 ```
@@ -63,6 +88,60 @@ python claude_docs_monitor.py backfill --dry-run   # preview what would be class
 ```
 
 Running with no arguments defaults to `check`.
+
+## Codex Variant
+
+A parallel OpenAI Codex monitor is included as `codex_docs_monitor.py`.
+
+- Source index: `https://developers.openai.com/codex/llms.txt`
+- Default data directory: `data-codex/` (separate from Claude artifacts)
+- Command surface: mirrors the existing CLI (`check`, `digest`, `query`, `backfill`, etc.)
+- Local page filenames are path-preserving (e.g. `app__commands.md`, `ide__commands.md`)
+
+Quick start:
+
+```bash
+python codex_docs_monitor.py check
+python codex_docs_monitor.py digest
+python codex_docs_monitor.py query --since 7d
+```
+
+AI behavior in the Codex variant:
+
+- Uses OpenAI Responses API with OAuth token from `~/.codex/auth.json`
+- Falls back to `codex exec` automatically if direct API auth/call fails
+
+See `CODEX_DOCS_MONITOR.md` for full command reference.
+
+## Cross-Tool Full-Corpus Comparison
+
+A full documentation-set comparator is included as `compare_docs_features.py`.
+It evaluates all cached pages for Claude, Gemini, and Codex (not just recent diffs), then scores and ranks the three tools using a fixed 100-point rubric.
+
+```bash
+python compare_docs_features.py
+python compare_docs_features.py --strict-rubric
+python compare_docs_features.py --output-dir data-analysis/compare-docs
+```
+
+Default outputs:
+
+- `data-analysis/compare-docs/report.md` (detailed analysis report)
+- `data-analysis/compare-docs/report.json` (structured feature/score matrix)
+- `data-analysis/compare-docs/latest_scores.csv` (quick rank export)
+
+Rubric definition and scoring rules are versioned in `DOCS_COMPARISON_RUBRIC.md`.
+
+### Codex skill: compare docs
+
+A project-local Codex skill is included at `.codex/skills/compare-docs/`.
+Use it in Codex as:
+
+```text
+$compare-docs
+```
+
+The skill runs the full-corpus analyzer and returns an executive ranking summary, while writing the detailed artifacts to `data-analysis/compare-docs/`.
 
 ### Claude Code slash command
 
@@ -156,6 +235,72 @@ python claude_docs_monitor.py backfill --dry-run   # preview what would be class
 python claude_docs_monitor.py backfill             # classify all historical changes
 ```
 
+### Hybrid retrieval and agentic reports (RAG layer)
+
+`claude_docs_monitor` ships with an optional retrieval layer that turns the cached docs and change history into a queryable knowledge base. Three new commands:
+
+```bash
+python claude_docs_monitor.py reindex                            # build chunk + embedding index
+python claude_docs_monitor.py search "how do I block dangerous tools"   # hybrid BM25+dense semantic search
+python claude_docs_monitor.py report  "what changed about hooks last month"  # agentic RAG report
+```
+
+Architecture (M1-M5):
+- **M1: `embedding_cache.py`** — persistent SQLite cache of embeddings, keyed by `(content_hash, model)`. Hash-keyed so re-running reindex is a no-op when content hasn't changed; survives DB drops.
+- **M2: `doc_index.py`** — chunks pages at H1/H2/H3 boundaries (with code-fence awareness), one whole-page chunk plus per-section chunks, FTS5 mirror for BM25, optional LLM-generated 1-3 sentence summaries embedded separately for "answer-language" matching.
+- **M3: `retriever.py`** — runs BM25 (FTS5), dense cosine on raw vectors, dense cosine on summary vectors, fuses with Reciprocal Rank Fusion (k=60), and optionally reranks with Claude.
+- **M4: `report_builder.py`** — agentic loop using the Claude Agent SDK: PLAN → RETRIEVE → REASON & GAP-FILL (with in-process MCP tools) → SYNTHESIZE → SELF-CRITIQUE.
+- **M5: surfaces** — three new CLI subcommands, six new MCP tools (`hybrid_search`, `change_search`, `find_similar`, `get_chunk`, `build_report`, `list_reports`, `get_saved_report`), and a new `/report` skill. `/ask-docs` and `/query-docs` upgrade to use hybrid search when MCP is available, with grep fallback.
+
+#### Setup
+
+```bash
+pip install -r requirements-rag.txt          # numpy
+ollama pull nomic-embed-text                 # local, free, default-friendly
+# OR install voyageai: pip install voyageai && export VOYAGE_API_KEY=...
+# OR install openai:   pip install openai && export OPENAI_API_KEY=...
+```
+
+#### Embedding providers
+
+| Provider | Model (default) | Dims | Cost / 1M tokens | When |
+|---|---|---|---|---|
+| `voyage` | `voyage-3` | 1024 | $0.06 | Default; Anthropic-aligned |
+| `voyage` | `voyage-3-large` | 2048 | $0.18 | Highest quality |
+| `openai` | `text-embedding-3-large` | 3072 | $0.13 | Familiar baseline |
+| `ollama` | `nomic-embed-text` | 768 | free | Local, no network |
+
+Pick the provider via `--provider`, the env var `DOCS_MONITOR_EMBED_PROVIDER`, or the config file at `~/.config/claude_docs_monitor/embedding.json`.
+
+#### Workflow
+
+```bash
+# One-time: build the index (auto-incremental on subsequent /check-docs runs)
+python claude_docs_monitor.py reindex --provider ollama --skip-summaries
+
+# Search — hybrid by default, with optional rerank
+python claude_docs_monitor.py search "how do I prevent dangerous tool use"
+python claude_docs_monitor.py search "PreToolUse" --source page --no-rerank
+python claude_docs_monitor.py search "execution order" --source change_event --since 30d
+
+# Report — agentic RAG with inline citations
+python claude_docs_monitor.py report  "what changed about hooks in the last 30 days"
+python claude_docs_monitor.py report  "compare subagents and skills" --scope docs
+```
+
+After the first `reindex`, every subsequent `check` run automatically reindexes only the changed pages. Pass `--no-reindex` to skip.
+
+#### Cost
+
+- Initial embed of corpus (~125 pages × ~5 chunks × 2 representations × ~500 tokens): ~625K tokens
+  - Voyage-3: **~$0.04**
+  - OpenAI 3-large: **~$0.08**
+  - Ollama: **free**
+- Initial summary generation (~625 chunks via Sonnet): **<$1** (free via Max OAuth + SDK)
+- Per `/check-docs` incremental update: **<$0.005** (Voyage); free on Ollama
+- Per `/report` invocation: **$0.50–$3.00** API equivalent depending on depth (effectively free via Max OAuth + SDK on Max 20x)
+- Per `/ask-docs` query: **<$0.001** + Claude rerank tokens
+
 ### GitHub issues for breaking changes
 
 The `digest` command can automatically create GitHub issues for breaking changes:
@@ -189,12 +334,26 @@ Or use the project-scoped `.mcp.json` (already included — works automatically 
 
 ### Tools
 
+Read-only metadata lookups (always available):
+
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `query_changes` | Search AI-classified change events | `keyword?`, `category?`, `severity?`, `page?`, `since?`, `until?`, `limit?` |
+| `query_changes` | Exact-filter search of AI-classified change events | `keyword?`, `category?`, `severity?`, `page?`, `since?`, `until?`, `limit?` |
 | `get_page_snapshots` | Snapshot history for a page or overview of all tracked URLs | `url?`, `limit?` |
 | `get_diff` | Unified diff between the two most recent snapshots | `url` (required) |
-| `search_pages` | Full-text search across latest cached doc pages | `keyword` (required), `limit?` |
+| `search_pages` | LIKE-based full-text search of latest cached pages (kept for backward compat) | `keyword`, `limit?` |
+
+Hybrid retrieval and agentic-report tools (require `reindex` to have built `data-claude/index.db`):
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `hybrid_search` | BM25 ⊕ dense ⊕ rerank semantic search across pages and change events | `query`, `source_type?`, `category?`, `severity?`, `page?`, `since?`, `until?`, `k?`, `rerank?` |
+| `change_search` | Same as hybrid_search but locked to `source_type='change_event'` | `query`, `since?`, `until?`, `category?`, `severity?`, `page?`, `k?` |
+| `find_similar` | Find chunks most similar to a given chunk_id (cosine) | `chunk_id`, `k?` |
+| `get_chunk` | Fetch a chunk's full content and metadata | `chunk_id` |
+| `build_report` | Run the agentic RAG report builder | `question`, `scope?`, `since?`, `until?`, `model?`, `max_turns?` |
+| `list_reports` | List previously generated reports | (none) |
+| `get_saved_report` | Read a previously generated report by slug | `slug` |
 
 ### Resources
 

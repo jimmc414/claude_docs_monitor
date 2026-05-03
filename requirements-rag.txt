@@ -1,0 +1,22 @@
+# Hybrid retrieval + agentic-report layer (M1-M5)
+#
+# Required:
+#   - numpy:  in-process cosine similarity
+#
+# Embedding providers (install at least one):
+#   - voyageai:  default; Anthropic-aligned 1024-d embeddings ($0.06/1M tokens)
+#   - openai:    text-embedding-3-large 3072-d ($0.13/1M tokens)
+#   - (Ollama is HTTP-based — no Python package needed; just `ollama pull nomic-embed-text`)
+#
+# Reranker backends (optional; default is Claude rerank via the existing llm_backend):
+#   - voyageai (already listed) provides rerank-2 if you prefer it
+#   - sentence-transformers + torch for local cross-encoder rerank (offline)
+
+numpy>=1.26
+
+# Default embedding provider — uncomment to install
+# voyageai>=0.2
+
+# Alternative providers — uncomment if you prefer them
+# openai>=1.50
+# sentence-transformers>=3.0   # local cross-encoder reranker (CPU)

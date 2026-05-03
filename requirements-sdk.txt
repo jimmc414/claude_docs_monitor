@@ -1,0 +1,4 @@
+# Optional: Claude Agent SDK backend (recommended).
+# Enables the `sdk` backend tier — lighter and faster than the `cli` fallback.
+# Authenticates via Max OAuth (~/.claude/.credentials.json) when ANTHROPIC_API_KEY is unset.
+claude-agent-sdk>=0.1.50

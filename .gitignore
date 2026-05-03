@@ -106,3 +106,11 @@ demo/
 # Snapshot database (binary, grows with each run)
 snapshots.db
 data/
+
+# RAG layer state (rebuildable from snapshots.db + pages/)
+data-claude/index.db
+data-claude/embeddings.db
+data-codex/index.db
+data-codex/embeddings.db
+data-gemini/index.db
+data-gemini/embeddings.db

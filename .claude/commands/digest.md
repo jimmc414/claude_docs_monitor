@@ -13,15 +13,16 @@ Run the AI-powered digest on the latest documentation changes.
 ### Step 1: Run the digest command
 
 ```bash
-cd ~/.local/share/claude-docs-monitor && python ~/.claude/lib/claude_docs_monitor.py digest $ARGUMENTS
+cd ~/.local/share/claude-docs-monitor && python ~/.claude/lib/claude_docs_monitor.py digest --report ~/.local/share/claude-docs-monitor/data-claude $ARGUMENTS
 ```
 
 ### Step 2: Copy outputs to project directory
 
 ```bash
-cp ~/.local/share/claude-docs-monitor/data/digest.* /mnt/c/python/claude_docs_monitor/ 2>/dev/null || true
+mkdir -p /mnt/c/python/claude_docs_monitor/data-claude
+cp ~/.local/share/claude-docs-monitor/data-claude/digest.* /mnt/c/python/claude_docs_monitor/data-claude/ 2>/dev/null || true
 ```
 
 ### Step 3: Show the digest
 
-Read `/mnt/c/python/claude_docs_monitor/digest.md` and present it to the user.
+Read `/mnt/c/python/claude_docs_monitor/data-claude/digest.md` and present it to the user.

@@ -1,0 +1,4 @@
+# Optional: Anthropic REST API backend (opt-in, billed).
+# Enables the `api` backend tier. Activated only when ANTHROPIC_API_KEY is set.
+# For users without a Max subscription. Max users should prefer the SDK or CLI backends.
+anthropic>=0.42.0

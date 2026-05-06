@@ -21,6 +21,16 @@ from datetime import datetime, timedelta, timezone
 from difflib import unified_diff
 from pathlib import Path
 
+# Load .env if present (no python-dotenv dep). Idempotent with run_reports.py loader.
+_env_file = Path(__file__).resolve().parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+
 import httpx
 
 from llm_backend import call_claude
@@ -2160,7 +2170,7 @@ def cmd_reindex(args):
 def cmd_search(args):
     """One-shot hybrid search; pretty-print top-K with provenance."""
     from doc_index import DocIndex
-    from embedding_cache import EmbeddingCache
+    from embedding_cache import EmbeddingCache, infer_provider_from_cache
     from retriever import HybridRetriever
 
     data_dir, index_db, emb_db, _ = _rag_paths(getattr(args, "report", None))
@@ -2171,6 +2181,19 @@ def cmd_search(args):
     if getattr(args, "verbose", False):
         os.environ.setdefault("DOCS_MONITOR_RETRIEVAL_VERBOSE", "1")
         os.environ.setdefault("DOCS_MONITOR_VERBOSE", "1")
+
+    # If the user hasn't pinned a provider but embeddings.db has rows, default
+    # to whatever provider/model is already cached. Avoids the "Voyage required"
+    # error when the cache is full of Ollama vectors.
+    if "DOCS_MONITOR_EMBED_PROVIDER" not in os.environ:
+        inferred = infer_provider_from_cache(emb_db)
+        if inferred:
+            provider, model = inferred
+            os.environ["DOCS_MONITOR_EMBED_PROVIDER"] = provider
+            os.environ.setdefault("DOCS_MONITOR_EMBED_MODEL", model)
+            if getattr(args, "verbose", False):
+                print(f"[cmd_search] auto-detected provider={provider} model={model} "
+                      f"from cache", file=sys.stderr)
 
     embedder = EmbeddingCache(emb_db)
     index = DocIndex(index_db, embedder=embedder)
@@ -2197,9 +2220,11 @@ def cmd_search(args):
         source_type=source_type,
         filters=filters or None,
         k=getattr(args, "k", 10),
-        expand_query=not getattr(args, "no_expand", False),
+        expand_query=getattr(args, "expand", False),
         use_hyde=getattr(args, "hyde", False),
         rerank=not getattr(args, "no_rerank", False),
+        dedup=getattr(args, "dedup", False),
+        max_per_source=getattr(args, "max_per_source", 3),
     )
 
     if getattr(args, "json", False):
@@ -2259,6 +2284,30 @@ def cmd_report(args):
 
     output_dir = Path(getattr(args, "output", None) or (data_dir / "reports"))
 
+    # Map raw stage names to user-facing one-liners. The build_report loop
+    # takes 5+ minutes, so a silent CLI looks hung — this prints each stage
+    # to stderr so the user knows progress is being made.
+    stage_messages = {
+        "planning":           "[report] Planning sub-questions…",
+        "planned":            "[report] Plan ready: {sub_questions} sub-questions.",
+        "retrieving":         "[report] Retrieving evidence…",
+        "retrieved":          "[report] Retrieved {chunks} initial chunks.",
+        "reasoning":          "[report] Reasoning & gap-filling (agentic loop)…",
+        "reasoned":           "[report] Reasoning loop done ({loop_turns} tool turns).",
+        "synthesizing":       "[report] Synthesizing report…",
+        "synthesized":        "[report] Draft synthesized ({chars} chars).",
+        "critiquing":         "[report] Self-critiquing draft…",
+        "auditing_citations": "[report] Auditing citations for entailment…",
+        "revising_citations": "[report] Strict mode: revising {bad_citations} bad citations…",
+    }
+    def _on_progress(stage: str, info: dict) -> None:
+        msg = stage_messages.get(stage)
+        if msg:
+            try:
+                print(msg.format(**info), file=sys.stderr, flush=True)
+            except (KeyError, IndexError):
+                print(f"[report] {stage}", file=sys.stderr, flush=True)
+
     report = build_report(
         question=args.question,
         scope=scope,
@@ -2267,6 +2316,9 @@ def cmd_report(args):
         max_loop_turns=getattr(args, "max_turns", 6),
         model=getattr(args, "model", "opus"),
         do_self_critique=not getattr(args, "no_self_critique", False),
+        skip_entailment_audit=getattr(args, "skip_entailment_audit", False),
+        strict_citations=getattr(args, "strict_citations", False),
+        progress_callback=_on_progress,
         output_dir=output_dir,
         data_dir=data_dir,
     )
@@ -2628,8 +2680,19 @@ def build_parser() -> argparse.ArgumentParser:
     search_p.add_argument("--since", metavar="DATE", help="Filter by date ('7d', '30d', YYYY-MM-DD)")
     search_p.add_argument("--until", metavar="DATE", help="Filter by upper date")
     search_p.add_argument("--k", type=int, default=10, help="Number of results (default: 10)")
+    search_p.add_argument(
+        "--max-per-source", type=int, default=3,
+        help="Cap chunks per source doc in top-K (default 3; pass 99 to disable)",
+    )
     search_p.add_argument("--no-rerank", action="store_true", help="Skip LLM rerank")
-    search_p.add_argument("--no-expand", action="store_true", help="Skip query expansion")
+    search_p.add_argument("--expand", action="store_true",
+                          help="Enable LLM query expansion "
+                               "(default off — paraphrase variants destabilize BM25 ranking; "
+                               "voyage-4-large already bridges synonyms strongly)")
+    search_p.add_argument("--dedup", action="store_true",
+                          help="Enable semantic chunk dedup after RRF "
+                               "(default off — hurts paraphrase stability slightly; "
+                               "primarily useful for KG-style use)")
     search_p.add_argument("--hyde", action="store_true", help="Enable HyDE (slower)")
     search_p.add_argument("--json", action="store_true", help="Output JSON")
     search_p.add_argument(
@@ -2667,6 +2730,17 @@ def build_parser() -> argparse.ArgumentParser:
     report_p.add_argument(
         "--no-self-critique", action="store_true",
         help="Skip the self-critique pass (faster, less rigorous)",
+    )
+    report_p.add_argument(
+        "--skip-entailment-audit", action="store_true",
+        help="Skip the per-citation entailment audit (saves ~30s and ~$0.05/report; "
+             "leaves citations un-validated against evidence)",
+    )
+    report_p.add_argument(
+        "--strict-citations", action="store_true",
+        help="On entailment-audit failure, ask the synthesizer to revise the "
+             "report rather than just dropping bad citations (slower, higher "
+             "quality; adds one Opus call)",
     )
     report_p.add_argument(
         "--output", metavar="PATH",

@@ -24,12 +24,59 @@ Set ``DOCS_MONITOR_VERBOSE=1`` to print the chosen backend to stderr.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
+import time
 from typing import Optional
 
 _RESOLVED_BACKEND: Optional[str] = None
+
+
+class RateLimitError(RuntimeError):
+    """Raised when the upstream model returns a rate-limit / overloaded signal.
+
+    Distinct from generic RuntimeError so callers (including the dispatcher's
+    own retry loop) can backoff transient throttling without retrying real
+    bugs like schema parse failures, auth errors, or empty outputs.
+    """
+    def __init__(self, message: str, retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+# Pattern matches the rate-limit / overload signatures we've observed across
+# all three backend paths:
+#   - Anthropic API: "rate_limit_error", "overloaded_error", HTTP 429/529
+#   - claude_agent_sdk: surfaces upstream error text in the Exception message
+#   - claude CLI: writes the same to stderr before exiting non-zero
+_RATE_LIMIT_PATTERNS = re.compile(
+    r"(rate[_ -]?limit|429\b|529\b|overloaded_error|too many requests)",
+    re.IGNORECASE,
+)
+
+# The SDK's hardcoded placeholder when the inner CLI subprocess dies opaquely
+# (exit non-zero with no stderr we can attribute). Observed in v4.2/v4.3 probes:
+# the CLI subprocess crashes ~1-2 times per 9-question report run with completely
+# empty stderr — likely signal kill / OOM / transient race during init. The
+# placeholder string is set at subprocess_cli.py:625-627 in claude_agent_sdk.
+# Retrying once or twice consistently recovers; the underlying cause is opaque
+# but transient.
+_SDK_OPAQUE_FAILURE_PATTERN = re.compile(
+    r"Command failed with exit code \d+.*Check stderr output for details",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _is_rate_limit(err_text: str) -> bool:
+    """True if err_text contains any known rate-limit signature."""
+    return bool(_RATE_LIMIT_PATTERNS.search(err_text or ""))
+
+
+def _is_sdk_opaque_failure(err_text: str) -> bool:
+    """True if err_text matches the SDK's hardcoded exit-N + 'Check stderr' placeholder."""
+    return bool(_SDK_OPAQUE_FAILURE_PATTERN.search(err_text or ""))
 
 # The API backend needs full model IDs. The CLI and SDK accept aliases
 # natively. These IDs are documented as working with Max OAuth in
@@ -169,9 +216,10 @@ def _call_via_cli(*, prompt: str, stdin: str, model: str,
         timeout=timeout, env=cli_env,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"claude CLI exited with code {result.returncode}: {result.stderr[:500]}"
-        )
+        err_msg = f"claude CLI exited with code {result.returncode}: {result.stderr[:500]}"
+        if _is_rate_limit(result.stderr):
+            raise RateLimitError(err_msg)
+        raise RuntimeError(err_msg)
     raw = result.stdout.strip()
     if not raw:
         raise RuntimeError("claude CLI returned empty output")
@@ -197,7 +245,14 @@ def _run_sdk_coro(coro, timeout: int):
 
 def _call_via_sdk(*, prompt: str, stdin: str, model: str,
                   json_schema: Optional[str], timeout: int) -> str:
-    from claude_agent_sdk import query, ClaudeAgentOptions  # pyright: ignore[reportMissingImports]
+    # Uses ``ClaudeSDKClient`` rather than the one-shot ``query()`` helper. The
+    # latter has a race where the CLI subprocess exits immediately after sending
+    # the prompt, which is fine in isolation but breaks subsequent invocations
+    # in the same Python process — observed in v4.3 as the inner CLI dying
+    # opaquely (exit 1, empty stderr) on every call AFTER a ClaudeSDKClient has
+    # been used. The long-lived client gives the subprocess time to drain.
+    # See report_builder.py:425-429 for the original observation in the gap-fill loop.
+    from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient  # pyright: ignore[reportMissingImports]
 
     full_prompt = _combine(prompt, stdin, json_schema)
 
@@ -207,27 +262,36 @@ def _call_via_sdk(*, prompt: str, stdin: str, model: str,
             model=model,
             permission_mode="bypassPermissions",
             max_turns=1,
+            stderr=lambda line: print(f"[sdk-cli] {line}", file=sys.stderr, flush=True),
         )
 
         async def _run() -> str:
             chunks: list[str] = []
             final_result: Optional[str] = None
-            async for msg in query(prompt=full_prompt, options=options):
-                # ResultMessage.result is the cleanest one-shot output
-                result_attr = getattr(msg, "result", None)
-                if isinstance(result_attr, str) and result_attr:
-                    final_result = result_attr
-                    continue
-                # AssistantMessage.content is a list[ContentBlock]
-                content = getattr(msg, "content", None)
-                if isinstance(content, list):
-                    for block in content:
-                        text = getattr(block, "text", None)
-                        if isinstance(text, str) and text:
-                            chunks.append(text)
+            async with ClaudeSDKClient(options=options) as client:
+                await client.query(full_prompt)
+                async for msg in client.receive_response():
+                    result_attr = getattr(msg, "result", None)
+                    if isinstance(result_attr, str) and result_attr:
+                        final_result = result_attr
+                        continue
+                    content = getattr(msg, "content", None)
+                    if isinstance(content, list):
+                        for block in content:
+                            text = getattr(block, "text", None)
+                            if isinstance(text, str) and text:
+                                chunks.append(text)
             return (final_result or "".join(chunks)).strip()
 
-        out = _run_sdk_coro(_run(), timeout)
+        try:
+            out = _run_sdk_coro(_run(), timeout)
+        except Exception as e:
+            err_text = f"{e!r} {e!s}"
+            if _is_rate_limit(err_text):
+                raise RateLimitError(str(e)) from e
+            if _is_sdk_opaque_failure(err_text):
+                raise RateLimitError(f"transient SDK subprocess failure: {e!s}") from e
+            raise
     finally:
         if saved_key is not None:
             os.environ["ANTHROPIC_API_KEY"] = saved_key
@@ -246,11 +310,26 @@ def _call_via_api(*, prompt: str, stdin: str, model: str,
     full_prompt = _combine(prompt, stdin, json_schema)
 
     client = anthropic.Anthropic(timeout=float(timeout))
-    msg = client.messages.create(
-        model=api_model,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": full_prompt}],
-    )
+    try:
+        msg = client.messages.create(
+            model=api_model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": full_prompt}],
+        )
+    except anthropic.RateLimitError as e:
+        retry_after = None
+        try:
+            ra = e.response.headers.get("retry-after") if getattr(e, "response", None) else None
+            retry_after = float(ra) if ra else None
+        except (ValueError, TypeError, AttributeError):
+            retry_after = None
+        raise RateLimitError(str(e), retry_after=retry_after) from e
+    except anthropic.APIStatusError as e:
+        # 529 overloaded falls under APIStatusError, not RateLimitError
+        status = getattr(e, "status_code", None)
+        if status in (429, 529) or _is_rate_limit(str(e)):
+            raise RateLimitError(str(e)) from e
+        raise
 
     text_parts: list[str] = []
     for block in msg.content:
@@ -266,15 +345,21 @@ def _call_via_api(*, prompt: str, stdin: str, model: str,
 def call_claude(*, prompt: str, stdin: str = "", model: str = "sonnet",
                 json_schema: Optional[str] = None, backend: str = "auto",
                 max_tokens: int = 4096, timeout: int = 300,
-                env: Optional[dict] = None) -> str:
-    """Call Claude via the resolved backend.
+                env: Optional[dict] = None,
+                max_retries: int = 2,
+                retry_base_delay: float = 5.0) -> str:
+    """Call Claude via the resolved backend, with rate-limit retry.
 
     Returns the model's textual output. If ``json_schema`` is provided, the
     output is the model's JSON response as a string (the caller parses it).
 
-    Raises RuntimeError on backend failure. The CLI backend may also raise
-    ``subprocess.TimeoutExpired`` or ``FileNotFoundError``; callers that want
-    to gracefully degrade should catch all three.
+    Retries up to ``max_retries`` times on ``RateLimitError`` only, with
+    exponential backoff (default 5s, 15s, 45s). All other exceptions raise
+    immediately on the first attempt — schema parse failures, auth errors,
+    and timeouts should NOT be retried.
+
+    Raises RuntimeError or RateLimitError on backend failure. Callers that
+    want to gracefully degrade should catch both.
     """
     chosen = resolve_backend(backend)
     if env is None:
@@ -282,14 +367,33 @@ def call_claude(*, prompt: str, stdin: str = "", model: str = "sonnet",
 
     _vprint(f"call: backend={chosen} model={model} schema={'yes' if json_schema else 'no'}")
 
-    if chosen == "sdk":
-        return _call_via_sdk(prompt=prompt, stdin=stdin, model=model,
-                             json_schema=json_schema, timeout=timeout)
-    if chosen == "cli":
-        return _call_via_cli(prompt=prompt, stdin=stdin, model=model,
-                             json_schema=json_schema, timeout=timeout, env=env)
-    if chosen == "api":
-        return _call_via_api(prompt=prompt, stdin=stdin, model=model,
-                             json_schema=json_schema, max_tokens=max_tokens,
-                             timeout=timeout)
-    raise RuntimeError(f"unknown backend: {chosen}")
+    def _dispatch() -> str:
+        if chosen == "sdk":
+            return _call_via_sdk(prompt=prompt, stdin=stdin, model=model,
+                                 json_schema=json_schema, timeout=timeout)
+        if chosen == "cli":
+            return _call_via_cli(prompt=prompt, stdin=stdin, model=model,
+                                 json_schema=json_schema, timeout=timeout, env=env)
+        if chosen == "api":
+            return _call_via_api(prompt=prompt, stdin=stdin, model=model,
+                                 json_schema=json_schema, max_tokens=max_tokens,
+                                 timeout=timeout)
+        raise RuntimeError(f"unknown backend: {chosen}")
+
+    last_err: Optional[RateLimitError] = None
+    for attempt in range(max_retries + 1):
+        try:
+            return _dispatch()
+        except RateLimitError as e:
+            last_err = e
+            if attempt >= max_retries:
+                break
+            delay = e.retry_after if e.retry_after else retry_base_delay * (3 ** attempt)
+            kind = "transient-sdk" if "transient SDK" in str(e) else "rate-limit"
+            _vprint(
+                f"{kind} retry (attempt {attempt + 1}/{max_retries + 1}), "
+                f"sleeping {delay:.1f}s: {e!s}"
+            )
+            time.sleep(delay)
+    assert last_err is not None
+    raise last_err

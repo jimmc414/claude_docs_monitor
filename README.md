@@ -68,7 +68,7 @@ python claude_docs_monitor.py                      # fetch, diff, update local f
 python claude_docs_monitor.py check --quiet        # summary table only
 python claude_docs_monitor.py check --poll 3600    # re-check every hour
 python claude_docs_monitor.py check --save-diffs out/
-python claude_docs_monitor.py check --dump ~/docs         # dump pages to custom dir instead of data/pages/
+python claude_docs_monitor.py check --dump ~/docs         # dump pages to custom dir instead of data-claude/pages/
 python claude_docs_monitor.py check --report ~/reports    # write reports to custom dir
 python claude_docs_monitor.py check --include-html       # include HTML-noise diffs (suppressed by default)
 python claude_docs_monitor.py history              # browse snapshot history
@@ -150,19 +150,31 @@ A standalone `/check-docs` slash command is included. It runs the monitor and su
 **Install:**
 
 ```bash
+# Slash command files
+mkdir -p ~/.claude/commands ~/.claude/lib
 cp .claude/commands/check-docs.md ~/.claude/commands/
 cp .claude/commands/digest.md ~/.claude/commands/
+cp .claude/commands/ask-docs.md ~/.claude/commands/
 cp .claude/commands/query-docs.md ~/.claude/commands/
+cp .claude/commands/report.md ~/.claude/commands/
+
+# Orchestrator + LLM dispatcher + RAG modules + MCP server
 cp claude_docs_monitor.py ~/.claude/lib/
+cp llm_backend.py        ~/.claude/lib/
+cp embedding_cache.py    ~/.claude/lib/
+cp doc_index.py          ~/.claude/lib/
+cp retriever.py          ~/.claude/lib/
+cp report_builder.py     ~/.claude/lib/
+cp mcp_server.py         ~/.claude/lib/
 ```
 
-The skills store data at `~/.local/share/claude-docs-monitor/` and auto-install `httpx` if needed. After installing, just type `/check-docs` in any Claude Code session. When changes are detected, it automatically generates an AI digest and stores structured change events.
+The skills store data at `~/.local/share/claude-docs-monitor/data-claude/` and auto-install `httpx` if needed. After installing, just type `/check-docs` in any Claude Code session. When changes are detected, it automatically generates an AI digest and stores structured change events.
 
 First run fetches everything and stores a baseline. No diffs are shown. Second run onward reports changes.
 
 ### Ask docs
 
-An `/ask-docs` skill is also included. It answers questions about Claude Code by searching the locally cached documentation pages (stored in `data/pages/`), citing sources and noting cache freshness.
+An `/ask-docs` skill is also included. It answers questions about Claude Code by searching the locally cached documentation pages (stored in `data-claude/pages/`), citing sources and noting cache freshness.
 
 **Install:**
 
@@ -190,7 +202,7 @@ python claude_docs_monitor.py digest --model opus
 python claude_docs_monitor.py digest --report ~/reports
 ```
 
-Run `check` first to generate a report, then `digest` to analyze it. The digest writes `data/digest.md` and `data/digest.html`.
+Run `check` first to generate a report, then `digest` to analyze it. The digest writes `data-claude/digest.md` and `data-claude/digest.html`.
 
 A `/digest` slash command is also included. It runs the digest and presents the results directly in your Claude Code session.
 
@@ -374,11 +386,11 @@ Once configured, you can ask your MCP client things like:
 
 ### Configuration
 
-The server reads the SQLite database at `~/.local/share/claude-docs-monitor/data/snapshots.db` by default. Override with the `DOCS_MONITOR_DB` environment variable.
+The server reads the SQLite database at `~/.local/share/claude-docs-monitor/data-claude/snapshots.db` by default. Override with the `DOCS_MONITOR_DB` environment variable.
 
 ## Reports
 
-Every `check` run generates four report files in `data/` (override with `--report DIR`):
+Every `check` run generates four report files in `data-claude/` (override with `--report DIR`):
 
 - **`report.html`** / **`report.md`** — latest run only, overwritten each time
 - **`history.html`** / **`history.md`** — cumulative log, appended each run with a separator between entries
@@ -389,8 +401,10 @@ Reports include a summary table (changed/added/removed/errors) and per-page unif
 ## What gets stored
 
 ```
-data/
+data-claude/
   snapshots.db    # SQLite: full history of every fetch + change intelligence
+  index.db        # SQLite: chunk index + FTS5 mirror (only after `reindex`)
+  embeddings.db   # SQLite: embedding cache (only after `reindex`)
   pages/          # latest .md files, updated every run
   report.html     # self-contained HTML report (latest run)
   report.md       # Markdown report (latest run)
@@ -398,6 +412,7 @@ data/
   history.md      # cumulative Markdown report (appended each run)
   digest.html     # AI-generated change digest (latest run)
   digest.md       # AI-generated change digest (latest run)
+  reports/        # saved RAG reports (markdown + JSON pairs)
 ```
 
 Three tables: `index_snapshots` (the llms.txt file itself), `page_snapshots` (one row per fetch per URL), and `change_events` (AI-classified change metadata). All append-only — every fetch and classification is stored permanently. The `change_events` table accumulates structured intelligence over time: category, severity, summary, details, action items, and keyword tags for each change. You can query this data via the `query` command or directly in SQLite.

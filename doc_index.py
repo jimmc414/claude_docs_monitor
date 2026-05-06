@@ -206,7 +206,8 @@ def chunk_markdown(text: str, source_id: str) -> list[dict]:
         path_parts = [source_id] + [stack[k] for k in sorted(stack.keys())]
         heading_path = " > ".join(path_parts)
 
-        section_text = "\n".join(lines[start:end]).strip()
+        section_lines = lines[start:end]
+        section_text = "\n".join(section_lines).strip()
         if not section_text:
             continue
 
@@ -229,6 +230,101 @@ def chunk_markdown(text: str, source_id: str) -> list[dict]:
                 "chunk_type": "section",
             })
 
+        # If this section is dominated by a markdown table, emit one
+        # additional chunk per table row so individual rows are retrievable.
+        # We keep the original section chunk for context-window queries.
+        if _is_table_dominated(section_lines):
+            row_chunks = _chunk_markdown_table(
+                section_lines,
+                heading_path=heading_path,
+                abs_line_start=start + 1 + dropped,
+            )
+            chunks.extend(row_chunks)
+
+    return chunks
+
+
+def _is_table_dominated(section_lines: list[str], threshold: float = 0.5) -> bool:
+    """True if >threshold of non-blank lines in a section start with `|`."""
+    non_blank = [ln for ln in section_lines if ln.strip()]
+    if len(non_blank) < 4:  # need header + sep + 2 body rows minimum
+        return False
+    table_lines = [ln for ln in non_blank if ln.lstrip().startswith("|")]
+    return len(table_lines) / len(non_blank) >= threshold
+
+
+def _chunk_markdown_table(
+    section_lines: list[str],
+    heading_path: str,
+    abs_line_start: int,
+) -> list[dict]:
+    """Emit one chunk per body row of a markdown table, with headers prepended.
+
+    Each row chunk is self-contained and embeddable: it carries the section
+    heading, the table header, and the row itself. The table separator row is
+    detected by all-dash/colon cells.
+
+    abs_line_start is the 1-based line number in the original document of the
+    first line in section_lines.
+    """
+    # Find the heading line (one line starting with #) and the first table line
+    table_start = None
+    for i, ln in enumerate(section_lines):
+        if ln.lstrip().startswith("|"):
+            table_start = i
+            break
+    if table_start is None:
+        return []
+
+    # Header is the first table line; separator is any line that looks like |---|---|
+    sep_re = re.compile(r"^\s*\|[\s:\-|]+\|\s*$")
+    header_line = None
+    sep_idx = None
+    body_rows: list[tuple[int, str]] = []
+    for j in range(table_start, len(section_lines)):
+        ln = section_lines[j]
+        if not ln.lstrip().startswith("|"):
+            # Table ended; rows after this are post-table content (ignored)
+            break
+        if header_line is None:
+            header_line = ln
+            continue
+        if sep_idx is None and sep_re.match(ln):
+            sep_idx = j
+            continue
+        body_rows.append((j, ln))
+
+    if header_line is None:
+        return []
+
+    # Fallback: some real-world docs use Github-flavored tables with
+    # non-standard separators (or omit them entirely). If we found a header
+    # but no separator within 2 lines, treat the line right after the header
+    # as the start of the body, and synthesize a separator for the row chunks.
+    if sep_idx is None:
+        # The body_rows we collected start at header+1 — those are real body rows.
+        # Synthesize a separator from the header's pipe count.
+        n_cells = max(1, header_line.count("|") - 1)
+        sep_line = "| " + " | ".join(["---"] * n_cells) + " |"
+    else:
+        sep_line = section_lines[sep_idx]
+
+    if not body_rows:
+        return []
+    chunks: list[dict] = []
+    for line_offset, row_text in body_rows:
+        row_chunk_text = (
+            f"## {heading_path}\n\n"
+            f"{header_line}\n{sep_line}\n{row_text}"
+        )
+        abs_line = abs_line_start + line_offset
+        chunks.append({
+            "heading_path": heading_path,
+            "content": row_chunk_text,
+            "line_start": abs_line,
+            "line_end": abs_line,
+            "chunk_type": "table_row",
+        })
     return chunks
 
 

@@ -49,7 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from doc_index import DocIndex
 from embedding_cache import EmbeddingCache
-from llm_backend import call_claude
+from llm_backend import call_claude, RateLimitError
 from retriever import HybridRetriever
 
 
@@ -108,6 +108,8 @@ class Report:
     loop_turns: int
     markdown_path: Path
     json_path: Path
+    critique: dict | None = None
+    re_critique: dict | None = None
 
 
 # ── Step 1: PLAN ────────────────────────────────────────────────────────────
@@ -146,6 +148,15 @@ Rules:
     changed*. Use 'page' for stable docs questions. null = both.
   - Filter by category if asked about specific change types ('breaking',
     'feature', 'deprecation', 'clarification', 'flag_change', 'bugfix').
+  - ENUMERATION rule: if the question asks about ALL or EVERY mechanism, or
+    asks the user to COMPARE / DIFFER between options ("what are all the ways
+    to X", "every mechanism for Y", "compare A and B"), list AT LEAST 5
+    candidate sub-topics in `sub_questions`, each one targeting a distinct
+    category. It is better to over-search and find no result for a candidate
+    than to miss a category entirely. For example, for "all knowledge
+    persistence mechanisms" you should enumerate at least: CLAUDE.md,
+    auto memory / MEMORY.md, skills, settings.json, hooks, sub-agents,
+    transcripts/sessions — each as its own sub-question.
 """
 
 
@@ -454,6 +465,7 @@ async def _reason_and_gap_fill(
                 "mcp__retrieval__get_chunk",
                 "mcp__retrieval__find_similar",
             ],
+            stderr=lambda line: print(f"[reason-cli] {line}", file=sys.stderr, flush=True),
         )
         # The 1M-context beta is only available on API key billing. Max OAuth
         # ignores it (and warns). Skip it on Max OAuth.
@@ -550,6 +562,16 @@ Format requirements:
 CRITICAL RULES:
   - Cite every factual claim with [^cN] where N is the chunk_id (a real id from the evidence).
   - Do NOT make claims that aren't supported by the provided evidence.
+  - If the evidence does NOT contain documentation of a claimed feature, flag,
+    function, or behavior asked about in the user question, state explicitly:
+    "[X] does not appear in the cached Anthropic documentation as of {timestamp}."
+    Do NOT speculate that it might be "undocumented", "experimental", "internal",
+    or "may exist in newer versions". Treat absent evidence as a hard signal that
+    the feature is not part of the documented API surface. A definitive refusal
+    is more useful than a hedge.
+  - If the retrieved evidence is thin (fewer than 3 chunks scoring above 5.0
+    rerank), call this out in the Executive Summary in one sentence so the
+    reader knows the answer rests on weak ground.
   - If the evidence is insufficient for a sub-question, say so explicitly
     rather than fabricating an answer.
   - Be concrete: prefer specific identifiers, file names, dates, code
@@ -606,41 +628,318 @@ def _synthesize(
 # ── Step 5: SELF-CRITIQUE ──────────────────────────────────────────────────
 
 
-CRITIQUE_PROMPT = """Audit a research report for citation quality.
+CRITIQUE_PROMPT = """Audit a research report for citation quality AND completeness.
 
 Question: {question}
 
 Report:
 {report}
 
-For each factual claim in the report, check:
-  1. Is it cited with [^cN] (or [^N]) where N is a chunk_id from the evidence?
-  2. Is the cited chunk_id in the report's "Sources" section?
+Evidence excerpts (the source chunks the report should faithfully reflect):
+{evidence_summary}
+
+Audit two dimensions:
+
+A. CITATION QUALITY
+  1. Is every factual claim cited with [^cN] (or [^N])?
+  2. Are cited chunk_ids in the report's "Sources" section?
+
+B. COMPLETENESS — focus on enumerated content
+  1. Scan the evidence above for enumerated lists (markdown lists, tables,
+     comma-separated enumerations of >=3 items) that are directly relevant to
+     the question.
+  2. For each such enumeration, check whether ALL items appear in the report.
+  3. Common gaps: directory lists where some entries are dropped (e.g. report
+     mentions ".git, .vscode" but evidence has ".git, .claude, .vscode, .idea, .husky");
+     comparison tables missing rows; option flag lists with omitted flags.
+  4. Do NOT flag stylistic summaries — only flag when the report COULD have
+     listed all N items but listed only K<N. Skip if the question explicitly
+     asks for "the most important" or "key" items only.
 
 Output a JSON object (no other text):
 {{
   "ok": true | false,
   "uncited_claims": ["<verbatim quote of any uncited claim>", ...],
   "missing_sources": [<chunk_ids cited but not in Sources>, ...],
+  "missing_enumerations": [
+    {{"source_chunk": <chunk_id>, "enumeration": "<short label, e.g. 'protected directory list'>",
+      "items_in_evidence": ["item1", "item2", ...],
+      "items_in_report": ["item1", ...],
+      "missing": ["item3", "item4"]}},
+    ...
+  ],
   "verdict": "<one-line summary>"
 }}
 
-If ok is true, the report passed audit. If false, list the issues found.
+`ok` is false if EITHER citation quality fails OR a `missing_enumerations`
+gap has 2+ missing items. Single-item gaps may be intentional summarization.
 """
 
 
-_CITATION_RE = re.compile(r"\[\^c?(\d+)\]")
+def _parse_citations_with_sentences(md: str) -> list[tuple[int, str]]:
+    """Return list of (chunk_id, cited_sentence) for each [^cN] citation.
+
+    Handles citation clusters like "Sentence text. [^c123][^c456] Next sentence."
+    The cited sentence is the one ending just before the citation cluster.
+    """
+    out = []
+    pattern = re.compile(r"\[\^c?(\d+)\]")
+    for m in pattern.finditer(md):
+        cid = int(m.group(1))
+        start = m.start()
+        ctx_start = max(0, start - 800)
+        ctx = md[ctx_start:start]
+        ctx_stripped = re.sub(r"(\[\^c?\d+\][\s,;]*)+\s*$", "", ctx).rstrip()
+        if not ctx_stripped:
+            sentence_raw = ctx[-200:]
+        else:
+            positions = []
+            for sep in (". ", "! ", "? ", "\n"):
+                idx = ctx_stripped.rfind(sep)
+                if idx >= 0:
+                    positions.append(idx + len(sep) - 1)
+            terminators = [p for p in positions if p < len(ctx_stripped) - 1]
+            sent_start = (max(terminators) + 1) if terminators else 0
+            sentence_raw = ctx_stripped[sent_start:]
+        sentence_clean = pattern.sub("", sentence_raw).strip()
+        sentence_clean = re.sub(r"\s+", " ", sentence_clean)
+        out.append((cid, sentence_clean))
+    return out
 
 
-def _extract_citations(md: str) -> set[int]:
-    """Extract chunk_ids from any [^cN] or [^N] citation in the markdown."""
-    return {int(m.group(1)) for m in _CITATION_RE.finditer(md)}
+ENTAILMENT_PROMPT = """You are auditing a single citation in a research report.
+
+Sentence: {sentence}
+
+Cited chunk content:
+{chunk_content}
+
+Does the chunk content support (entail) the sentence?
+
+Respond with EXACTLY one of these labels on the first line, then a brief reason:
+  supports     — the chunk directly states or clearly implies the claim
+  partial      — the chunk is related and partially supports it but is incomplete
+  contradicts  — the chunk states something that conflicts with the claim
+  unrelated    — the chunk does not address the claim at all
+
+Format:
+<label>
+<one-line reason>
+"""
 
 
-def _self_critique(question: str, report_md: str, model: str = "sonnet") -> dict:
-    prompt = CRITIQUE_PROMPT.format(question=question, report=report_md[:30000])
+# Bound the worst-case audit cost. With ~25 citations clustered into ~8
+# sentences a typical report stays under this; reports that flood citations
+# get truncated audits (un-audited surplus is logged but kept).
+MAX_ENTAILMENT_CHECKS = 20
+
+
+def _entailment_audit(
+    report_md: str,
+    evidence_by_id: dict[int, "Evidence"],
+    index: "DocIndex",
+    model: str = "haiku",
+    max_checks: int = MAX_ENTAILMENT_CHECKS,
+) -> tuple[str, list[dict]]:
+    """Per-citation entailment check. Drops contradicting/unrelated citations.
+
+    Returns (revised_markdown, audit_records). Each audit record is a dict with
+    keys: chunk_id, sentence, verdict, reason, action_taken.
+
+    Caps actual LLM calls at ``max_checks`` unique (chunk_id, sentence) pairs.
+    Surplus pairs are recorded with verdict='skipped' and kept (no rewrite).
+    """
+    citations = _parse_citations_with_sentences(report_md)
+    if not citations:
+        return report_md, []
+
+    audit: list[dict] = []
+    bad_pairs: set[tuple[int, str]] = set()  # (chunk_id, sentence) to drop
+
+    # Dedupe first so the cap reflects actual API calls, not tokens
+    unique_pairs: list[tuple[int, str]] = []
+    seen: set[tuple[int, str]] = set()
+    for chunk_id, sentence in citations:
+        key = (chunk_id, sentence)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_pairs.append((chunk_id, sentence))
+
+    n_checked = 0
+    for chunk_id, sentence in unique_pairs:
+        if n_checked >= max_checks:
+            audit.append({
+                "chunk_id": chunk_id,
+                "sentence": sentence[:300],
+                "verdict": "skipped",
+                "reason": f"max_checks={max_checks} budget exhausted",
+                "action_taken": "kept",
+            })
+            continue
+
+        ev = evidence_by_id.get(chunk_id)
+        if ev is not None:
+            chunk_content = ev.quote
+        else:
+            c = index.get_chunk(chunk_id)
+            chunk_content = c.content if c else ""
+        if not chunk_content:
+            audit.append({
+                "chunk_id": chunk_id,
+                "sentence": sentence[:300],
+                "verdict": "unknown",
+                "reason": "chunk not found",
+                "action_taken": "kept",
+            })
+            continue
+
+        prompt = ENTAILMENT_PROMPT.format(
+            sentence=sentence[:1000],
+            chunk_content=chunk_content[:3000],
+        )
+        n_checked += 1
+        try:
+            raw = call_claude(
+                prompt=prompt, model=model, max_tokens=200, timeout=60,
+            )
+        except Exception as e:
+            _vprint(f"entailment audit failed for chunk {chunk_id}: {e!r}")
+            audit.append({
+                "chunk_id": chunk_id,
+                "sentence": sentence[:300],
+                "verdict": "error",
+                "reason": str(e)[:200],
+                "action_taken": "kept",
+            })
+            continue
+
+        lines = [ln.strip() for ln in raw.strip().splitlines() if ln.strip()]
+        verdict = (lines[0] if lines else "").lower().strip(" .:")
+        reason = lines[1] if len(lines) > 1 else ""
+        for label in ("supports", "partial", "contradicts", "unrelated"):
+            if label in verdict:
+                verdict = label
+                break
+        else:
+            verdict = "unknown"
+
+        if verdict in ("contradicts", "unrelated"):
+            bad_pairs.add((chunk_id, sentence))
+            action = "dropped"
+        else:
+            action = "kept"
+        audit.append({
+            "chunk_id": chunk_id,
+            "sentence": sentence[:300],
+            "verdict": verdict,
+            "reason": reason[:300],
+            "action_taken": action,
+        })
+
+    if not bad_pairs:
+        return report_md, audit
+
+    # Drop contradicting/unrelated citations from the markdown. We re-walk the
+    # citations in order, computing the sentence for each one, and remove the
+    # token if it's bad.
+    pattern = re.compile(r"\[\^c?(\d+)\]")
+    matches = list(pattern.finditer(report_md))
+    parsed = _parse_citations_with_sentences(report_md)  # same order as matches
+    if len(matches) != len(parsed):
+        return report_md, audit  # safety: re-parse mismatch, give up on rewrite
+    keep_mask = []
+    for (cid, sentence), m in zip(parsed, matches):
+        keep_mask.append((cid, sentence) not in bad_pairs)
+
+    out_parts: list[str] = []
+    cursor = 0
+    for keep, m in zip(keep_mask, matches):
+        out_parts.append(report_md[cursor:m.start()])
+        if keep:
+            out_parts.append(m.group(0))
+        cursor = m.end()
+    out_parts.append(report_md[cursor:])
+    revised = "".join(out_parts)
+    # Collapse double-spaces left by removed tokens
+    revised = re.sub(r"  +", " ", revised)
+    return revised, audit
+
+
+def _entailment_revise(
+    question: str,
+    plan: dict,
+    evidence: list["Evidence"],
+    bad_audit: list[dict],
+    model: str = "opus",
+) -> str:
+    """Strict-citations mode: ask the synthesizer to fix citations rather than drop them."""
+    notes = []
+    for rec in bad_audit:
+        if rec.get("action_taken") != "dropped":
+            continue
+        notes.append(
+            f"  - Chunk {rec['chunk_id']} ({rec['verdict']}): the cited sentence "
+            f"\"{rec['sentence'][:150]}\" is not supported by chunk {rec['chunk_id']}. "
+            f"Either rewrite the sentence to match the chunk, or drop the citation."
+        )
+    if not notes:
+        return ""
+    revise_question = (
+        f"{question}\n\nThe previous draft had these citation problems:\n"
+        + "\n".join(notes)
+        + "\n\nProduce a revised report that fixes these citations."
+    )
+    return _synthesize(revise_question, plan, evidence, model=model)
+
+
+def _build_evidence_summary_for_critique(
+    evidence: list["Evidence"] | None, max_chars: int = 20000
+) -> str:
+    """Compact evidence chunks for the critique prompt.
+
+    Includes chunk_id, source_id, and content (truncated). Prioritizes chunks
+    most likely to contain enumerations: those with markdown list/table tokens.
+    """
+    if not evidence:
+        return "(no evidence provided to critique — completeness check skipped)"
+    # Score each chunk on enumeration-likeness
+    def enum_score(text: str) -> int:
+        s = 0
+        s += text.count("\n- ") + text.count("\n* ")  # bullet lists
+        s += text.count("\n| ")                        # tables
+        s += min(text.count(", "), 5)                  # inline enumerations (capped)
+        return s
+    ranked = sorted(evidence, key=lambda e: enum_score(e.quote), reverse=True)
+    parts: list[str] = []
+    used = 0
+    for e in ranked:
+        body = e.quote[:1500]
+        block = f"[chunk_id={e.chunk_id}, source_id={e.source_id}]\n{body}\n"
+        if used + len(block) > max_chars:
+            break
+        parts.append(block)
+        used += len(block)
+    return "\n---\n".join(parts) if parts else "(no enumeration-like evidence)"
+
+
+def _self_critique(
+    question: str,
+    report_md: str,
+    model: str = "sonnet",
+    evidence: list["Evidence"] | None = None,
+) -> dict:
+    evidence_summary = _build_evidence_summary_for_critique(evidence)
+    prompt = CRITIQUE_PROMPT.format(
+        question=question,
+        report=report_md[:30000],
+        evidence_summary=evidence_summary,
+    )
     try:
-        raw = call_claude(prompt=prompt, model=model, max_tokens=2000, timeout=120)
+        raw = call_claude(prompt=prompt, model=model, max_tokens=2000, timeout=600)
+    except RateLimitError as e:
+        _vprint(f"critique rate-limited after retries: {e!r}")
+        return {"ok": True, "verdict": "critique skipped (rate limit after retries)"}
     except Exception as e:
         _vprint(f"critique failed: {e!r}")
         return {"ok": True, "verdict": "critique skipped (error)"}
@@ -668,6 +967,9 @@ def build_report(
     max_loop_turns: int = 6,
     model: str = "opus",
     do_self_critique: bool = True,
+    skip_entailment_audit: bool = False,
+    strict_citations: bool = False,
+    progress_callback=None,
     output_dir: Path = Path("data-claude/reports"),
     data_dir: Path = Path("data-claude"),
 ) -> Report:
@@ -694,21 +996,33 @@ def build_report(
     index = DocIndex(index_db, embedder=embedder)
     retriever = HybridRetriever(index, embedder)
 
+    def _notify(stage: str, info: dict | None = None) -> None:
+        if progress_callback is not None:
+            try:
+                progress_callback(stage, info or {})
+            except Exception as e:
+                _vprint(f"progress_callback error: {e!r}")
+
     try:
         # 1. PLAN
+        _notify("planning")
         _vprint("step 1: PLAN")
         plan = _plan_question(question, scope, since_iso, until_iso, model="sonnet")
         _vprint(f"plan: {len(plan['sub_questions'])} sub-questions")
+        _notify("planned", {"sub_questions": len(plan["sub_questions"])})
 
         # 2. RETRIEVE
+        _notify("retrieving")
         _vprint("step 2: RETRIEVE")
         initial = _initial_retrieve(
             plan, retriever, scope, since_iso, until_iso,
             k_per_sub=8,
         )
         _vprint(f"initial evidence: {len(initial)} chunks")
+        _notify("retrieved", {"chunks": len(initial)})
 
         # 3. REASON & GAP-FILL
+        _notify("reasoning")
         _vprint("step 3: REASON & GAP-FILL")
         try:
             chosen_ids, turns_used = asyncio.run(
@@ -722,6 +1036,7 @@ def build_report(
             _vprint(f"agentic loop failed, using initial evidence: {e!r}")
             chosen_ids = [e.chunk_id for e in initial[:max_evidence_chunks]]
             turns_used = 0
+        _notify("reasoned", {"loop_turns": turns_used})
 
         # Build final evidence list from chosen ids
         evidence_map = {e.chunk_id: e for e in initial}
@@ -752,31 +1067,100 @@ def build_report(
         _vprint(f"final evidence: {len(final_evidence)} chunks")
 
         # 4. SYNTHESIZE
+        _notify("synthesizing")
         _vprint("step 4: SYNTHESIZE")
         report_md = _synthesize(question, plan, final_evidence, model=model)
+        try:
+            intermediate_dir = output_dir / "intermediate"
+            intermediate_dir.mkdir(parents=True, exist_ok=True)
+            fp_slug = _slugify(question) or "report"
+            fp_ts = time.strftime("%Y%m%d-%H%M%S")
+            (intermediate_dir / f"{fp_ts}-{fp_slug}.first-pass.md").write_text(
+                report_md + "\n", encoding="utf-8"
+            )
+        except Exception as e:
+            _vprint(f"first-pass dump failed: {e!r}")
+        _notify("synthesized", {"chars": len(report_md)})
 
         # 5. SELF-CRITIQUE (one retry on failure)
         validated = True
+        entailment_audit_records: list[dict] = []
+        evidence_by_id = {e.chunk_id: e for e in final_evidence}
+        critique: dict | None = None
+        re_critique: dict | None = None
         if do_self_critique:
+            _notify("critiquing")
             _vprint("step 5: SELF-CRITIQUE")
-            critique = _self_critique(question, report_md, model="sonnet")
+            critique = _self_critique(
+                question, report_md, model="sonnet", evidence=final_evidence,
+            )
             validated = bool(critique.get("ok", True))
             if not validated:
                 _vprint(f"critique flagged: {critique.get('verdict')}")
+                missing_enums = critique.get("missing_enumerations") or []
+                enum_feedback = ""
+                if missing_enums:
+                    enum_lines = []
+                    for me in missing_enums[:5]:  # cap to avoid prompt bloat
+                        miss_items = me.get("missing", [])
+                        if not miss_items:
+                            continue
+                        enum_lines.append(
+                            f"  - In chunk {me.get('source_chunk')}, the "
+                            f"\"{me.get('enumeration', 'list')}\" enumeration is missing: "
+                            f"{miss_items}. Include all of these in your revision."
+                        )
+                    if enum_lines:
+                        enum_feedback = "\nCompleteness gaps to fix:\n" + "\n".join(enum_lines)
                 # Single retry: regenerate with the critique appended
                 try:
                     retry_md = _synthesize(
                         f"{question}\n\nCritique to address: {critique.get('verdict', '')}\n"
-                        f"Uncited claims to fix: {critique.get('uncited_claims', [])}",
+                        f"Uncited claims to fix: {critique.get('uncited_claims', [])}"
+                        f"{enum_feedback}",
                         plan,
                         final_evidence,
                         model=model,
                     )
                     report_md = retry_md
-                    re_critique = _self_critique(question, report_md, model="sonnet")
+                    re_critique = _self_critique(
+                        question, report_md, model="sonnet", evidence=final_evidence,
+                    )
                     validated = bool(re_critique.get("ok", True))
                 except Exception as e:
                     _vprint(f"retry synthesis failed: {e!r}")
+
+        # 5b. Per-citation entailment audit. Cheap (Haiku), but ~30s wall.
+        # Independent of self-critique — validates citations against evidence
+        # whether or not the critique pass runs. Opt-out via skip_entailment_audit.
+        if not skip_entailment_audit:
+            _notify("auditing_citations")
+            _vprint("step 5b: ENTAILMENT AUDIT")
+            try:
+                report_md, entailment_audit_records = _entailment_audit(
+                    report_md, evidence_by_id, index, model="haiku",
+                )
+                dropped = sum(
+                    1 for r in entailment_audit_records
+                    if r.get("action_taken") == "dropped"
+                )
+                _vprint(f"entailment audit: {dropped} bad citations / "
+                        f"{len(entailment_audit_records)} checked")
+                if strict_citations and dropped > 0:
+                    _notify("revising_citations", {"bad_citations": dropped})
+                    _vprint("step 5c: STRICT REVISE PASS")
+                    revised = _entailment_revise(
+                        question, plan, final_evidence,
+                        entailment_audit_records, model=model,
+                    )
+                    if revised:
+                        report_md = revised
+                        # Re-audit the revised report
+                        report_md, entailment_audit_records = _entailment_audit(
+                            report_md, evidence_by_id, index, model="haiku",
+                        )
+            except Exception as e:
+                _vprint(f"entailment audit failed: {e!r}")
 
         # 6. OUTPUT
         slug = _slugify(question)
@@ -792,6 +1176,10 @@ def build_report(
             "evidence": [e.to_dict() for e in final_evidence],
             "loop_turns": turns_used,
             "citations_validated": validated,
+            "critique": critique,
+            "re_critique": re_critique,
+            "entailment_audit": entailment_audit_records,
+            "strict_citations": strict_citations,
             "elapsed_seconds": time.time() - t0,
             "model": model,
             "scope": scope,
@@ -810,6 +1198,8 @@ def build_report(
             loop_turns=turns_used,
             markdown_path=md_path,
             json_path=json_path,
+            critique=critique,
+            re_critique=re_critique,
         )
     finally:
         retriever.invalidate_dense_cache()

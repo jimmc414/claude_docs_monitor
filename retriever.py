@@ -48,6 +48,10 @@ def _vprint(msg: str) -> None:
         print(f"[retriever] {msg}", file=sys.stderr)
 
 
+def _canonicalize_query(q: str) -> str:
+    return ' '.join(q.lower().strip().rstrip("?.!,;:").split())
+
+
 @dataclass
 class RetrievalHit:
     chunk_id: int
@@ -138,10 +142,17 @@ class HybridRetriever:
         k: int = 10,
         k_bm25: int = 50,
         k_dense: int = 50,
-        expand_query: bool = True,
+        expand_query: bool = False,
         use_hyde: bool = False,
         rerank: bool = True,
         rerank_backend: str = "claude",
+        # Dedup default OFF: paraphrase-test data showed it hurts chunk-level
+        # Jaccard slightly (0.269 → 0.319 with dedup off). Implementation is
+        # retained for future KG-node extraction (where collapsing near-duplicate
+        # chunks is the right primitive). Opt in via --dedup or dedup=True.
+        dedup: bool = False,
+        dedup_threshold: float = 0.92,
+        max_per_source: int = 3,
     ) -> list[RetrievalHit]:
         """Run the full hybrid retrieval pipeline."""
         if not query.strip():
@@ -153,6 +164,18 @@ class HybridRetriever:
             filter_args = dict(filters or {})
             if source_type and "source_type" not in filter_args:
                 filter_args["source_type"] = source_type
+
+            if "date" in filter_args:
+                d = filter_args.pop("date")
+                filter_args.setdefault("since", d)
+                filter_args.setdefault("until", d)
+
+            _ALLOWED = {"source_type", "category", "severity", "page", "since", "until", "tags"}
+            unknown = [k for k in filter_args if k not in _ALLOWED]
+            for k in unknown:
+                _vprint(f"dropping unknown filter key {k!r}={filter_args[k]!r}")
+                del filter_args[k]
+
             allowed_ids = self.index.filter_chunk_ids(**filter_args)
             if not allowed_ids:
                 _vprint(f"filters yielded zero candidates")
@@ -169,7 +192,11 @@ class HybridRetriever:
 
         _vprint(f"query variants: {len(variants)}")
 
-        # Run BM25 across all variants, take union ranked by max rank
+        # Run BM25 across all variants. Fuse by MAX across variants:
+        # keep the strongest single-variant score for each chunk, accepting
+        # paraphrase stochasticity as the trade-off. Mean-fusion was tried
+        # but dampened the strongest evidence — see HONEST_ASSESSMENT for
+        # the regression that motivated rolling back.
         bm25_scores: dict[int, float] = {}
         for v in variants:
             for chunk_id, score in self.index.fts_search(
@@ -182,7 +209,7 @@ class HybridRetriever:
         # Embed query variants once
         query_vectors = self.embedder.embed(variants)
 
-        # Dense search on raw content vectors
+        # Dense search on raw content vectors — max-fuse across variants
         self._ensure_dense(use_summary=False)
         dense_scores: dict[int, float] = {}
         if self._dense_content and self._dense_content.matrix is not None:
@@ -192,7 +219,7 @@ class HybridRetriever:
                 ):
                     dense_scores[chunk_id] = max(dense_scores.get(chunk_id, 0.0), score)
 
-        # Dense search on summary vectors (multi-representation)
+        # Dense search on summary vectors (multi-representation) — max-fuse
         self._ensure_dense(use_summary=True)
         summary_scores: dict[int, float] = {}
         if self._dense_summary and self._dense_summary.matrix is not None:
@@ -215,6 +242,34 @@ class HybridRetriever:
         fused_ids = [cid for cid, _ in fused[:50]]
         if not fused_ids:
             return []
+
+        # Per-source diversity: prevent any single source_id from monopolizing top-K.
+        # Preserve RRF order while capping each source to max_per_source. Default 3
+        # is a balance: high enough that a deep single-doc query still gets coverage,
+        # low enough to force cross-source spread on multi-doc questions like Q036.
+        if max_per_source > 0 and max_per_source < len(fused_ids):
+            per_source: dict[str, int] = {}
+            capped_ids: list[int] = []
+            for cid in fused_ids:
+                chunk = self.index.get_chunk(cid)
+                if not chunk:
+                    continue
+                sid = chunk.source_id
+                if per_source.get(sid, 0) >= max_per_source:
+                    continue
+                per_source[sid] = per_source.get(sid, 0) + 1
+                capped_ids.append(cid)
+            fused_ids = capped_ids
+            _vprint(f"after diversity cap (≤{max_per_source}/source): {len(fused_ids)}")
+
+        # Semantic dedup: collapse near-duplicate chunks to the highest-RRF
+        # representative. Same fact stated in two sections of the corpus
+        # shouldn't dilute top-k. Threshold conservative; --no-dedup to skip.
+        # (Same primitive will later extract KG nodes.)
+        if dedup and len(fused_ids) > 1:
+            fused_ids = self._semantic_dedup(fused_ids, threshold=dedup_threshold)
+            _vprint(f"after dedup: {len(fused_ids)} candidates "
+                    f"(threshold={dedup_threshold})")
 
         # Materialize hits
         hits: list[RetrievalHit] = []
@@ -268,6 +323,58 @@ class HybridRetriever:
         """Reset cached vector matrices. Call after reindexing."""
         self._dense_content = None
         self._dense_summary = None
+
+    # ── Semantic dedup ──────────────────────────────────────────────────────
+
+    def _semantic_dedup(
+        self, candidate_ids: list[int], threshold: float = 0.92,
+    ) -> list[int]:
+        """Greedy near-duplicate collapse on a list of chunk_ids.
+
+        Iterates candidates in their input order (RRF-rank order). For each,
+        computes cosine vs all already-kept representatives; if max similarity
+        exceeds ``threshold``, the candidate is dropped (subsumed by the
+        higher-ranked representative). Otherwise it joins the kept set.
+
+        Returns ids in original order, with duplicates removed. If a candidate
+        has no cached vector (e.g. embedding cache miss), it passes through
+        unchanged — better to keep an unverified chunk than drop it.
+        """
+        if not candidate_ids:
+            return []
+        # Pull vectors for all candidates from the dense_content matrix
+        self._ensure_dense(use_summary=False)
+        if not self._dense_content or self._dense_content.matrix is None:
+            return candidate_ids
+        idx_of = self._dense_content.norm_lookup
+        matrix = self._dense_content.matrix
+
+        kept_ids: list[int] = []
+        kept_vecs: list = []  # numpy arrays
+        for cid in candidate_ids:
+            row = idx_of.get(cid)
+            if row is None:
+                # No vector cached — pass through (don't risk dropping)
+                kept_ids.append(cid)
+                continue
+            v = matrix[row]
+            v_norm = float(np.linalg.norm(v))
+            if v_norm < 1e-9:
+                kept_ids.append(cid)
+                continue
+            duplicate = False
+            for kv in kept_vecs:
+                kv_norm = float(np.linalg.norm(kv))
+                if kv_norm < 1e-9:
+                    continue
+                sim = float(np.dot(v, kv) / (v_norm * kv_norm))
+                if sim >= threshold:
+                    duplicate = True
+                    break
+            if not duplicate:
+                kept_ids.append(cid)
+                kept_vecs.append(v)
+        return kept_ids
 
     # ── Query expansion ─────────────────────────────────────────────────────
 
@@ -445,7 +552,7 @@ class HybridRetriever:
             "Output ONLY a JSON array of integers, one per candidate, in order. "
             "Example: [8, 3, 0, 10, 5]. No prose, no markdown."
         )
-        stdin = f"Question: {query}\n\nCandidates:\n{candidates_block}"
+        stdin = f"Question: {_canonicalize_query(query)}\n\nCandidates:\n{candidates_block}"
 
         raw = call_claude(
             prompt=prompt, stdin=stdin, model="sonnet",

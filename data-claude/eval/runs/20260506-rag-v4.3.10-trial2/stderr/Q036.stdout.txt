@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260506-014245-how-does-hook-configuration-differ-between-c
+laude-code-the-c.md
+Evidence JSON: 
+data-claude/reports/20260506-014245-how-does-hook-configuration-differ-between-c
+laude-code-the-c.json
+Loop turns: 13, evidence: 25 chunks, elapsed: 807.5s

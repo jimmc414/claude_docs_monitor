@@ -40,8 +40,14 @@ import numpy as np
 DEFAULT_PROVIDER = "voyage"
 
 # Provider → (default model, dims, max batch size)
+# voyage-4-large is the current best-quality general retrieval model (1024-d,
+# 200M-token free tier). Bake-off in data-claude/eval/embed_compare_results.md
+# confirmed it beats voyage-context-3 on our corpus by ~20pp on Jaccard@5.
 PROVIDER_DEFAULTS: dict[str, tuple[str, int, int]] = {
-    "voyage":  ("voyage-3", 1024, 128),
+    # voyage-4-large enforces 120K tokens per batch. With mean chunk ~1500 tokens,
+    # a batch of 50 keeps us comfortably under the limit even when chunks run
+    # large (~2.5K tokens). Lower than voyage-3's nominal 128 cap but safer.
+    "voyage":  ("voyage-4-large", 1024, 50),
     "openai":  ("text-embedding-3-large", 3072, 2048),
     "ollama":  ("nomic-embed-text", 768, 1),  # Ollama embeds one at a time
 }
@@ -86,6 +92,57 @@ class EmbedStats:
     api_errors: int = 0
 
 
+# Map the model names we know to their provider. Used by infer_provider_from_cache().
+_MODEL_TO_PROVIDER: dict[str, str] = {
+    "voyage-4-large":          "voyage",
+    "voyage-4":                "voyage",
+    "voyage-4-lite":           "voyage",
+    "voyage-context-3":        "voyage",
+    "voyage-3":                "voyage",
+    "voyage-3-lite":           "voyage",
+    "voyage-3-large":          "voyage",
+    "voyage-large-2":          "voyage",
+    "text-embedding-3-large":  "openai",
+    "text-embedding-3-small":  "openai",
+    "text-embedding-ada-002":  "openai",
+    "nomic-embed-text":        "ollama",
+}
+
+
+def infer_provider_from_cache(db_path: Path) -> tuple[str, str] | None:
+    """Inspect an embeddings.db and infer (provider, model) from cached rows.
+
+    Returns the most-rows-cached (provider, model) pair, or None if the cache
+    is empty / unreadable / contains no recognized model.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path))
+        rows = conn.execute(
+            "SELECT model, COUNT(*) as count FROM embeddings GROUP BY model "
+            "ORDER BY count DESC"
+        ).fetchall()
+        conn.close()
+    except sqlite3.Error:
+        return None
+    for row in rows:
+        model = row[0]
+        provider = _MODEL_TO_PROVIDER.get(model)
+        if provider:
+            return (provider, model)
+        # Fuzzy match: if model name contains a known prefix
+        for known_prefix, prov in (
+            ("voyage", "voyage"),
+            ("text-embedding", "openai"),
+            ("nomic", "ollama"),
+        ):
+            if known_prefix in model.lower():
+                return (prov, model)
+    return None
+
+
 class EmbeddingCache:
     """SQLite-backed embedding cache with provider abstraction.
 
@@ -100,16 +157,28 @@ class EmbeddingCache:
         provider: str | None = None,
         model: str | None = None,
     ):
-        provider = (
-            os.environ.get("DOCS_MONITOR_EMBED_PROVIDER")
-            or provider
-            or DEFAULT_PROVIDER
-        )
+        explicit_provider = os.environ.get("DOCS_MONITOR_EMBED_PROVIDER") or provider
+        provider = explicit_provider or DEFAULT_PROVIDER
         if provider not in PROVIDER_DEFAULTS:
             raise ValueError(
                 f"Unknown provider '{provider}'. "
                 f"Valid: {sorted(PROVIDER_DEFAULTS.keys())}"
             )
+        # Defensive fallback: if defaulting to voyage but VOYAGE_API_KEY is unset,
+        # silently fall back to whatever the cache was indexed with. Prevents the
+        # silent "0 initial chunks → empty synthesis" failure mode from v4.3.5
+        # batch where queries can't be embedded → semantic search returns nothing.
+        # An EXPLICIT provider request (env var or arg) is always honored — the
+        # caller knows what they want.
+        if explicit_provider is None and provider == "voyage" and not _api_key("voyage"):
+            inferred = infer_provider_from_cache(Path(db_path))
+            if inferred and inferred[0] != "voyage":
+                _vprint(
+                    f"VOYAGE_API_KEY missing; falling back to cached provider "
+                    f"({inferred[0]}/{inferred[1]}). Set DOCS_MONITOR_EMBED_PROVIDER "
+                    f"to override or VOYAGE_API_KEY to use voyage."
+                )
+                provider, model = inferred[0], inferred[1]
         default_model, default_dims, default_batch = PROVIDER_DEFAULTS[provider]
         model = os.environ.get("DOCS_MONITOR_EMBED_MODEL") or model or default_model
 
@@ -318,8 +387,9 @@ class EmbeddingCache:
         except ImportError as e:
             raise RuntimeError(
                 "Voyage provider requires `pip install voyageai`. "
-                "Or switch to --provider ollama (local, no install) "
-                "or --provider openai."
+                "Or switch providers via the DOCS_MONITOR_EMBED_PROVIDER env var: "
+                "DOCS_MONITOR_EMBED_PROVIDER=ollama (local, no install) or "
+                "DOCS_MONITOR_EMBED_PROVIDER=openai."
             ) from e
         key = _api_key("voyage")
         if not key:

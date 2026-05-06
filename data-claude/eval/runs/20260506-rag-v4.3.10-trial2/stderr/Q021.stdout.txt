@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260506-005626-what-is-the-parallel-agents-n-cli-flag-used-
+for-in-claude-co.md
+Evidence JSON: 
+data-claude/reports/20260506-005626-what-is-the-parallel-agents-n-cli-flag-used-
+for-in-claude-co.json
+Loop turns: 11, evidence: 20 chunks, elapsed: 703.3s

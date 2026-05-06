@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260506-021756-in-the-python-agent-sdk-when-would-i-choose-
+claudesdkclient.md
+Evidence JSON: 
+data-claude/reports/20260506-021756-in-the-python-agent-sdk-when-would-i-choose-
+claudesdkclient.json
+Loop turns: 19, evidence: 25 chunks, elapsed: 1016.7s

@@ -383,7 +383,7 @@ User question: {question}
 Plan:
 {plan_json}
 
-Initial evidence retrieved (id: heading):
+Initial evidence retrieved (cID [conf=N.N from='sub-question'] heading):
 {initial_evidence}
 
 YOUR JOB: Expand and verify the evidence. Treat the initial list as a STARTING
@@ -393,6 +393,13 @@ almost certainly missed relevant chunks. You MUST call hybrid_search at least
 concepts, counter-examples, edge cases) before settling. Use get_chunk to read
 full content for snippets that look promising, and find_similar to expand
 around the most useful hits.
+
+Each chunk row shows `conf=N.N` (the rerank model's 0–10 relevance score for
+the sub-question that retrieved it) and `from='...'` (which sub-question it
+answers). Be slow to drop chunks scoring 8+ — they passed BM25, dense, and
+rerank gates. If you drop a high-conf chunk, do it because `get_chunk` showed
+the content doesn't actually answer its sub-question — not because the
+heading looks off-topic.
 
 Tools available:
   - hybrid_search(query, source_type, k): retrieve more chunks
@@ -450,7 +457,8 @@ async def _reason_and_gap_fill(
             question=question,
             plan_json=json.dumps(plan, indent=2),
             initial_evidence="\n".join(
-                f"  {e.chunk_id}: {e.heading_path[:100]}" for e in initial_evidence[:30]
+                f"  c{e.chunk_id} [conf={e.confidence:.1f} from='{(e.relevance_to or '')[:60]}'] {e.heading_path[:80]}"
+                for e in initial_evidence[:30]
             ),
             target_evidence=max(8, target_evidence),
         )

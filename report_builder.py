@@ -283,10 +283,20 @@ def _initial_retrieve(
 # ── Step 3: REASON & GAP-FILL (Agent SDK loop) ──────────────────────────────
 
 
-def _build_sdk_tools(retriever: HybridRetriever, index: DocIndex):
+def _build_sdk_tools(
+    retriever: HybridRetriever,
+    index: DocIndex,
+    discovered_chunk_ids: list[int] | None = None,
+):
     """Build in-process MCP tools the agent loop can call.
 
     Returns the list of SdkMcpTool instances ready for create_sdk_mcp_server.
+
+    If ``discovered_chunk_ids`` is provided, every chunk_id returned by
+    ``_hybrid_search`` and ``_find_similar`` is appended to it (in order of
+    discovery). V2 uses this for deterministic gap-fill append: the final cite
+    list is initial_evidence top-N plus these discoveries, ignoring whatever
+    the agent emits as final_chunk_ids.
     """
     from claude_agent_sdk import tool
 
@@ -313,6 +323,9 @@ def _build_sdk_tools(retriever: HybridRetriever, index: DocIndex):
             )
         except Exception as e:
             return {"content": [{"type": "text", "text": f"Error: {e}"}]}
+        if discovered_chunk_ids is not None:
+            for h in hits:
+                discovered_chunk_ids.append(h.chunk_id)
         formatted = json.dumps(
             [
                 {
@@ -359,6 +372,9 @@ def _build_sdk_tools(retriever: HybridRetriever, index: DocIndex):
             )
         except Exception as e:
             return {"content": [{"type": "text", "text": f"Error: {e}"}]}
+        if discovered_chunk_ids is not None:
+            for h in hits:
+                discovered_chunk_ids.append(h.chunk_id)
         formatted = json.dumps(
             [
                 {
@@ -386,27 +402,32 @@ Plan:
 Initial evidence retrieved (id: heading):
 {initial_evidence}
 
-YOUR JOB: Expand and verify the evidence. Treat the initial list as a STARTING
-POINT, not the answer. The planner only ran one query per sub-question, so it
-almost certainly missed relevant chunks. You MUST call hybrid_search at least
-2-3 times with different angles than the initial plan (synonyms, adjacent
-concepts, counter-examples, edge cases) before settling. Use get_chunk to read
-full content for snippets that look promising, and find_similar to expand
-around the most useful hits.
+YOUR JOB: GAP-FILL ONLY. Find chunks the planner missed by calling
+hybrid_search and find_similar. The chunks you discover via these tools will
+automatically be appended to the final cite list. The chunks already shown in
+"Initial evidence" above are guaranteed to be cited regardless of what you
+do — you cannot drop them.
+
+Focus on adding new high-relevance chunks, not curating the existing list.
+The planner only ran one query per sub-question, so it almost certainly
+missed relevant chunks. You MUST call hybrid_search at least 2-3 times with
+different angles than the initial plan (synonyms, adjacent concepts,
+counter-examples, edge cases). Use get_chunk to read full content for
+snippets that look promising, and find_similar to expand around the most
+useful hits.
 
 Tools available:
   - hybrid_search(query, source_type, k): retrieve more chunks
   - get_chunk(chunk_id): read full content of a chunk you saw a snippet of
   - find_similar(chunk_id, k): expand the neighborhood around a useful chunk
 
-When you have actively expanded the evidence and verified the most important
-chunks, output a JSON object on the LAST line of your response with the
-chunk_ids you want to cite in the final report:
+When done exploring, output a JSON object on the LAST line of your response:
   {{"final_chunk_ids": [123, 456, ...], "reasoning_complete": true}}
+This JSON is logged but no longer load-bearing for the cite list — the
+deterministic merge above does that. It exists for backward compatibility.
 
-Aim for {target_evidence}-25 chunks of evidence. Be selective in what you
-finally cite, but thorough in what you explore — a missed source is a worse
-outcome than a few extra tool calls.
+Aim to surface {target_evidence}-25 chunks total. Be thorough in what you
+explore — a missed source is worse than a few extra tool calls.
 """
 
 
@@ -441,7 +462,11 @@ async def _reason_and_gap_fill(
     saved_cc = os.environ.pop("CLAUDECODE", None)
     use_api_betas = saved_key is not None  # only enable beta features when running on API
     try:
-        tools = _build_sdk_tools(retriever, index)
+        # V2: capture chunk_ids the agent surfaces via tool calls (in order of
+        # discovery) so we can deterministically append them to the top-N from
+        # initial_evidence — bypassing the agent's curation authority.
+        discovered_chunk_ids: list[int] = []
+        tools = _build_sdk_tools(retriever, index, discovered_chunk_ids)
         srv_config = create_sdk_mcp_server(
             name="docs_monitor_retrieval", version="1.0.0", tools=tools
         )
@@ -474,7 +499,6 @@ async def _reason_and_gap_fill(
 
         options = ClaudeAgentOptions(**opts_kwargs)
 
-        chosen_ids: list[int] = []
         all_text_chunks: list[str] = []
         last_text = ""
         turns_used = 0
@@ -497,22 +521,40 @@ async def _reason_and_gap_fill(
                     last_text = result_attr
                     all_text_chunks.append(result_attr)
 
-        # Search every emitted text block for the JSON sentinel — the
-        # final-line convention is preferred but not always honored.
+        # V2: ignore the agent's final_chunk_ids JSON. The cite list is built
+        # deterministically from initial_evidence top-N plus everything the
+        # agent surfaced via tool calls (captured in discovered_chunk_ids).
+        # We still parse the JSON for logging/back-compat but don't use it.
         candidates = "\n".join(all_text_chunks).splitlines() + last_text.splitlines()
+        agent_emitted_ids: list[int] = []
         for line in reversed(candidates):
             line = line.strip()
             if line.startswith("{") and line.endswith("}") and "final_chunk_ids" in line:
                 try:
                     parsed = json.loads(line)
-                    chosen_ids = [int(x) for x in parsed.get("final_chunk_ids", [])]
-                    if chosen_ids:
+                    agent_emitted_ids = [int(x) for x in parsed.get("final_chunk_ids", [])]
+                    if agent_emitted_ids:
                         break
                 except (json.JSONDecodeError, ValueError, TypeError):
                     continue
-        # If parsing failed, fall back to the initial evidence's chunk_ids
-        if not chosen_ids:
-            chosen_ids = [e.chunk_id for e in initial_evidence[:target_evidence]]
+        _vprint(
+            f"V2 merge: top-N={min(target_evidence, len(initial_evidence))} "
+            f"agent-discovered={len(discovered_chunk_ids)} "
+            f"agent-emitted-(ignored)={len(agent_emitted_ids)}"
+        )
+
+        chosen_ids: list[int] = []
+        seen: set[int] = set()
+        for e in initial_evidence[:target_evidence]:
+            if e.chunk_id not in seen:
+                seen.add(e.chunk_id)
+                chosen_ids.append(e.chunk_id)
+        for cid in discovered_chunk_ids:
+            if cid not in seen:
+                seen.add(cid)
+                chosen_ids.append(cid)
+        # Cap at target_evidence + 25 to bound prompt size.
+        chosen_ids = chosen_ids[: target_evidence + 25]
         return chosen_ids, turns_used
     finally:
         if saved_key is not None:

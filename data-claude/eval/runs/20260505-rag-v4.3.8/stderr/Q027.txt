@@ -1,0 +1,47 @@
+[report] Planning sub-questions…
+[report_builder] step 1: PLAN
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] plan: 4 sub-questions
+[report] Plan ready: 4 sub-questions.
+[report] Retrieving evidence…
+[report_builder] step 2: RETRIEVE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] initial evidence: 12 chunks
+[report] Retrieved 12 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report_builder] step 3: REASON & GAP-FILL
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Reasoning loop done (10 tool turns).
+[report_builder] final evidence: 12 chunks
+[report] Synthesizing report…
+[report_builder] step 4: SYNTHESIZE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+Traceback (most recent call last):
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2807, in <module>
+    main()
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2803, in main
+    cmd_report(args)
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2311, in cmd_report
+    report = build_report(
+             ^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/report_builder.py", line 1072, in build_report
+    report_md = _synthesize(question, plan, final_evidence, model=model)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/report_builder.py", line 619, in _synthesize
+    raw = call_claude(
+          ^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 386, in call_claude
+    return _dispatch()
+           ^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 372, in _dispatch
+    return _call_via_sdk(prompt=prompt, stdin=stdin, model=model,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 300, in _call_via_sdk
+    raise RuntimeError("claude_agent_sdk returned empty output")
+RuntimeError: claude_agent_sdk returned empty output

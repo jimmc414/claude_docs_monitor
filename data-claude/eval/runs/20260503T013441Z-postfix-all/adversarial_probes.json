@@ -1,0 +1,282 @@
+[
+  {
+    "probe": "P1_filter_leakage",
+    "purpose": "change_search restricted to change_event source must not return page chunks",
+    "findings": [
+      {
+        "query": "what changed about hooks recently",
+        "n_hits": 4,
+        "n_leaked": 0,
+        "leaked_source_types": [],
+        "status": "clean"
+      },
+      {
+        "query": "new features added",
+        "n_hits": 4,
+        "n_leaked": 0,
+        "leaked_source_types": [],
+        "status": "clean"
+      },
+      {
+        "query": "deprecation",
+        "n_hits": 4,
+        "n_leaked": 0,
+        "leaked_source_types": [],
+        "status": "clean"
+      },
+      {
+        "query": "skills",
+        "n_hits": 4,
+        "n_leaked": 0,
+        "leaked_source_types": [],
+        "status": "clean"
+      },
+      {
+        "query": "permissions",
+        "n_hits": 4,
+        "n_leaked": 0,
+        "leaked_source_types": [],
+        "status": "clean"
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "probe": "P2_multi_hop_retrieval",
+    "purpose": "retrieval should surface chunks from all expected pages for multi-hop questions",
+    "findings": [
+      {
+        "q": "How do I run Claude Code in a GitHub Action with Bedrock as the backend and restrict tool access?",
+        "expected_pages": [
+          "amazon-bedrock.md",
+          "github-actions.md",
+          "permissions.md",
+          "settings.md"
+        ],
+        "retrieved_pages": [
+          "agent-sdk/permissions.md",
+          "amazon-bedrock.md",
+          "github-actions.md",
+          "tools-reference.md"
+        ],
+        "coverage_count": 2,
+        "missing": [
+          "permissions.md",
+          "settings.md"
+        ],
+        "status": "partial"
+      },
+      {
+        "q": "How do I use a custom skill from an MCP server with hooks that fire after tool calls?",
+        "expected_pages": [
+          "hooks.md",
+          "mcp.md",
+          "skills.md"
+        ],
+        "retrieved_pages": [
+          "agent-sdk/custom-tools.md",
+          "agent-sdk/hooks.md",
+          "agent-sdk/plugins.md",
+          "glossary.md",
+          "hooks-guide.md",
+          "hooks.md",
+          "plugins-reference.md",
+          "plugins.md"
+        ],
+        "coverage_count": 1,
+        "missing": [
+          "mcp.md",
+          "skills.md"
+        ],
+        "status": "partial"
+      },
+      {
+        "q": "How do I use checkpointing with sub-agents on the headless CLI?",
+        "expected_pages": [
+          "checkpointing.md",
+          "headless.md",
+          "sub-agents.md"
+        ],
+        "retrieved_pages": [
+          "agent-sdk/file-checkpointing.md",
+          "agent-sdk/subagents.md",
+          "checkpointing.md"
+        ],
+        "coverage_count": 1,
+        "missing": [
+          "headless.md",
+          "sub-agents.md"
+        ],
+        "status": "partial"
+      }
+    ],
+    "verdict": "PARTIAL"
+  },
+  {
+    "probe": "P4_stale_data_retrieval",
+    "purpose": "for recently-changed pages, retrieval should surface the changed page when its topic is queried",
+    "findings": [
+      {
+        "page": "github-enterprise-server.md",
+        "summary": "New documentation page: github-enterprise-server.md",
+        "run_ts": "2026-03-31 20:58:58 UTC",
+        "query_used": "tell me about github enterprise server",
+        "retrieved_top1": "github-enterprise-server.md",
+        "page_in_top5": true,
+        "status": "pass"
+      },
+      {
+        "page": "fullscreen.md",
+        "summary": "New documentation page: fullscreen.md",
+        "run_ts": "2026-03-31 20:58:58 UTC",
+        "query_used": "tell me about fullscreen",
+        "retrieved_top1": "fullscreen.md",
+        "page_in_top5": true,
+        "status": "pass"
+      },
+      {
+        "page": "computer-use.md",
+        "summary": "New documentation page: computer-use.md",
+        "run_ts": "2026-03-31 20:58:58 UTC",
+        "query_used": "tell me about computer use",
+        "retrieved_top1": "computer-use.md",
+        "page_in_top5": true,
+        "status": "pass"
+      },
+      {
+        "page": "scheduled-tasks.md",
+        "summary": "New documentation page: scheduled-tasks.md",
+        "run_ts": "2026-03-07 03:14:34 UTC",
+        "query_used": "tell me about scheduled tasks",
+        "retrieved_top1": "web-scheduled-tasks.md",
+        "page_in_top5": true,
+        "status": "pass"
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "probe": "P_chunk_existence",
+    "purpose": "chunk IDs cited in saved reports should still exist in index.db",
+    "findings": [
+      {
+        "report": "20260502-213103-how-does-the-python-agent-sdks-query-function-differ-from-cl.json",
+        "n_chunks": 25,
+        "n_missing": 0,
+        "missing_ids": [],
+        "status": "pass"
+      },
+      {
+        "report": "20260502-213522-in-the-python-agent-sdk-when-would-i-choose-claudesdkclient.json",
+        "n_chunks": 25,
+        "n_missing": 0,
+        "missing_ids": [],
+        "status": "pass"
+      },
+      {
+        "report": "20260502-215721-what-is-the-advanced-skill-runtime-configuration-in-claude-c.json",
+        "n_chunks": 25,
+        "n_missing": 0,
+        "missing_ids": [],
+        "status": "pass"
+      }
+    ],
+    "verdict": "PASS"
+  },
+  {
+    "probe": "P_paraphrase_stability",
+    "purpose": "same-intent paraphrases should retrieve overlapping chunks/pages",
+    "findings": [
+      {
+        "a": "How do I limit which tools Claude can use?",
+        "b": "How do I restrict Claude's tool access?",
+        "chunk_jaccard": 0.333,
+        "page_jaccard": 0.286,
+        "ids_a_top5": [
+          24,
+          167,
+          224,
+          225,
+          228
+        ],
+        "ids_b_top5": [
+          224,
+          225,
+          228,
+          1576,
+          1994
+        ],
+        "status": "unstable"
+      },
+      {
+        "a": "How do I configure Claude Code to use AWS Bedrock?",
+        "b": "How do I run Claude Code on Bedrock?",
+        "chunk_jaccard": 0.429,
+        "page_jaccard": 0.333,
+        "ids_a_top5": [
+          736,
+          738,
+          739,
+          740,
+          741
+        ],
+        "ids_b_top5": [
+          736,
+          737,
+          739,
+          740,
+          741
+        ],
+        "status": "unstable"
+      },
+      {
+        "a": "Where are session settings stored?",
+        "b": "What's the location of the settings file?",
+        "status": "error"
+      },
+      {
+        "a": "How do hooks work in Claude Code?",
+        "b": "What is a hook and how is it configured?",
+        "chunk_jaccard": 0.25,
+        "page_jaccard": 0.4,
+        "ids_a_top5": [
+          1577,
+          1578,
+          1579,
+          1588,
+          1590
+        ],
+        "ids_b_top5": [
+          1514,
+          1577,
+          1578,
+          1588,
+          1608
+        ],
+        "status": "unstable"
+      },
+      {
+        "a": "How do I create a custom slash command?",
+        "b": "How do I add a new slash command?",
+        "chunk_jaccard": 0.538,
+        "page_jaccard": 0.333,
+        "ids_a_top5": [
+          448,
+          449,
+          450,
+          451,
+          452
+        ],
+        "ids_b_top5": [
+          248,
+          448,
+          449,
+          450,
+          451
+        ],
+        "status": "stable"
+      }
+    ],
+    "verdict": "FAIL"
+  }
+]

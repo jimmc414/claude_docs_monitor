@@ -1,0 +1,30 @@
+[report] Planning sub-questions…
+[report] Plan ready: 6 sub-questions.
+[report] Retrieving evidence…
+[report] Retrieved 13 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report] Reasoning loop done (9 tool turns).
+[report] Synthesizing report…
+Traceback (most recent call last):
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2807, in <module>
+    main()
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2803, in main
+    cmd_report(args)
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2311, in cmd_report
+    report = build_report(
+             ^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/report_builder.py", line 1080, in build_report
+    report_md = _synthesize(question, plan, final_evidence, model=model)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/report_builder.py", line 627, in _synthesize
+    raw = call_claude(
+          ^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 386, in call_claude
+    return _dispatch()
+           ^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 372, in _dispatch
+    return _call_via_sdk(prompt=prompt, stdin=stdin, model=model,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 300, in _call_via_sdk
+    raise RuntimeError("claude_agent_sdk returned empty output")
+RuntimeError: claude_agent_sdk returned empty output

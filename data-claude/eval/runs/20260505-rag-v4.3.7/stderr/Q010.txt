@@ -1,0 +1,54 @@
+[report] Planning sub-questions…
+[report_builder] step 1: PLAN
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] plan: 5 sub-questions
+[report] Plan ready: 5 sub-questions.
+[report] Retrieving evidence…
+[report_builder] step 2: RETRIEVE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] initial evidence: 17 chunks
+[report] Retrieved 17 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report_builder] step 3: REASON & GAP-FILL
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Reasoning loop done (14 tool turns).
+[report_builder] final evidence: 17 chunks
+[report] Synthesizing report…
+[report_builder] step 4: SYNTHESIZE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Draft synthesized (5495 chars).
+[report] Self-critiquing draft…
+[report_builder] step 5: SELF-CRITIQUE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] critique flagged: No uncited claims and all seven cited chunk IDs appear in Sources; however, 3 of the 5 items from chunk 4268's enumerated wildcard-position example list are missing from the report — most critically Bash(* install), the only beginning-position wildcard example, which demonstrates a categorically different suffix-match behavior never mentioned — making ok: false. Additional minor citation note: in the Executive Summary, [^c3832] is appended to 'This is explicitly called out … with this exact example pair,' but chunk 3832 (headless.md) contains the git diff */git diff-index pair, not the ls */lsof pair; the correct and sufficient source for that specific example is chunk 4268, which is already cited in the same sentence.
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Auditing citations for entailment…
+[report_builder] step 5b: ENTAILMENT AUDIT
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[report_builder] entailment audit: 0 bad citations / 48 checked

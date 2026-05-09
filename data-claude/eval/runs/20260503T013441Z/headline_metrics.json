@@ -1,0 +1,35 @@
+{
+  "run_id": "20260503T013441Z",
+  "n_scored": 50,
+  "n_benchmark": 50,
+  "recall_at_10_by_dim": {
+    "factual": 0.917,
+    "citation": 0.8,
+    "coverage": 0.767,
+    "negation": 0.833,
+    "recency": 0.8,
+    "cross_source": 0.733,
+    "paraphrase_pair": 0.692
+  },
+  "correctness_dist": {
+    "correct": 3,
+    "partially_correct": 6
+  },
+  "alignment_dist": {
+    "supports": 26,
+    "partial": 26,
+    "contradicts": 2
+  },
+  "lure_refused": 1,
+  "lure_failed": 0,
+  "n_S1": 1,
+  "n_S2": 8,
+  "n_S3": 6,
+  "probe_verdicts": {
+    "P1_filter_leakage": "PASS",
+    "P2_multi_hop_retrieval": "PARTIAL",
+    "P4_stale_data_retrieval": "PASS",
+    "P_chunk_existence": "PASS",
+    "P_paraphrase_stability": "WEAK"
+  }
+}

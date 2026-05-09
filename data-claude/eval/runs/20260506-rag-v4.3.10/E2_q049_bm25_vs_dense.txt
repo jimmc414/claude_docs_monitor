@@ -1,0 +1,80 @@
+E2: BM25 vs dense top-10 Jaccard overlap on Q049 (v4.3.7 vs v4.3.9)
+========================================================================
+
+Per sub-query: top-10 chunk_id sets, Jaccard overlap = |A∩B| / |A∪B|
+(filter: source_type='page' to match --scope docs)
+
+--- SQ0 ---
+  v37 query: Python Agent SDK query() function parameters signature return type
+  v39 query: Python Agent SDK query() function parameters return type reference
+  BM25  v37 top-10: [251, 34]
+  BM25  v39 top-10: [268, 269, 71, 681, 59, 251, 678, 34, 544, 486]
+  BM25  Jaccard: 0.20  (intersection=[34, 251])
+  dense v37 top-10: [252, 338, 261, 262, 344, 340, 343, 337, 259, 2972]
+  dense v39 top-10: [252, 261, 262, 258, 338, 259, 343, 337, 344, 263]
+  dense Jaccard: 0.67  (intersection=[252, 259, 261, 262, 337, 338, 343, 344])
+
+--- SQ1 ---
+  v37 query: ClaudeSDKClient class instantiation usage Python SDK
+  v39 query: ClaudeSDKClient Python Agent SDK instantiation usage API reference
+  BM25  v37 top-10: []
+  BM25  v39 top-10: []
+  BM25  Jaccard: 0.00  (intersection=[])
+  dense v37 top-10: [326, 217, 1564, 254, 171, 252, 329, 127, 2834, 427]
+  dense v39 top-10: [252, 3056, 1564, 171, 440, 127, 338, 2782, 519, 543]
+  dense Jaccard: 0.25  (intersection=[127, 171, 252, 1564])
+
+--- SQ2 ---
+  v37 query: query() conversation history state management multi-turn context
+  v39 query: query() conversation history multi-turn messages state management Python SDK
+  BM25  v37 top-10: []
+  BM25  v39 top-10: []
+  BM25  Jaccard: 0.00  (intersection=[])
+  dense v37 top-10: [421, 2600, 2729, 813, 2604, 447, 265, 4025, 930, 1266]
+  dense v39 top-10: [421, 2738, 2600, 263, 257, 49, 420, 2604, 4025, 629]
+  dense Jaccard: 0.25  (intersection=[421, 2600, 2604, 4025])
+
+--- SQ3 ---
+  v37 query: ClaudeSDKClient multi-turn conversation history messages context management
+  v39 query: ClaudeSDKClient session context multi-turn conversation turns Python Agent SDK
+  BM25  v37 top-10: []
+  BM25  v39 top-10: []
+  BM25  Jaccard: 0.00  (intersection=[])
+  dense v37 top-10: [266, 2600, 2402, 2729, 815, 4025, 1694, 930, 2406, 932]
+  dense v39 top-10: [415, 266, 2738, 2875, 468, 1535, 2841, 421, 263, 1564]
+  dense Jaccard: 0.05  (intersection=[266])
+
+--- SQ4 ---
+  v37 query: query() ClaudeSDKClient streaming response handling output types
+  v39 query: query() ClaudeSDKClient streaming response handling differences Python SDK
+  BM25  v37 top-10: [251, 411, 10]
+  BM25  v39 top-10: [466, 411, 251, 10]
+  BM25  Jaccard: 0.75  (intersection=[10, 251, 411])
+  dense v37 top-10: [2970, 469, 1571, 467, 3829, 468, 254, 1572, 548, 2841]
+  dense v39 top-10: [254, 259, 467, 2841, 468, 217, 261, 260, 262, 263]
+  dense Jaccard: 0.25  (intersection=[254, 467, 468, 2841])
+
+--- SQ5 ---
+  v37 query: Agent SDK tool use agentic loop query() ClaudeSDKClient differences
+  v39 query: tool use tool result injection multi-turn query() ClaudeSDKClient Agent SDK
+  BM25  v37 top-10: [411, 78, 10, 95]
+  BM25  v39 top-10: []
+  BM25  Jaccard: 0.00  (intersection=[])
+  dense v37 top-10: [261, 262, 258, 264, 263, 11, 259, 256, 254, 260]
+  dense v39 top-10: [60, 69, 262, 63, 254, 16, 261, 2768, 64, 425]
+  dense Jaccard: 0.18  (intersection=[254, 261, 262])
+
+--- SQ6 ---
+  v37 query: query() vs ClaudeSDKClient use cases when to use programmatic API versus agent SDK
+  v39 query: ClaudeSDKClient query lifecycle concurrency resource management async Python Agent SDK
+  BM25  v37 top-10: []
+  BM25  v39 top-10: []
+  BM25  Jaccard: 0.00  (intersection=[])
+  dense v37 top-10: [254, 262, 264, 261, 259, 422, 258, 263, 260, 127]
+  dense v39 top-10: [254, 127, 263, 258, 256, 422, 261, 264, 262, 260]
+  dense Jaccard: 0.82  (intersection=[127, 254, 258, 260, 261, 262, 263, 264, 422])
+
+========================================================================
+AVERAGE Jaccard (per-SQ mean across 7 sub-queries):
+  BM25:  0.14
+  dense: 0.35

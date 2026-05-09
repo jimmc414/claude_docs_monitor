@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260506-124228-what-changed-about-the-default-model-behavio
+r-as-of-the-docs.md
+Evidence JSON: 
+data-claude/reports/20260506-124228-what-changed-about-the-default-model-behavio
+r-as-of-the-docs.json
+Loop turns: 13, evidence: 19 chunks, elapsed: 915.5s

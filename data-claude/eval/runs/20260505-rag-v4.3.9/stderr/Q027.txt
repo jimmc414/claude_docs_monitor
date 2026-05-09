@@ -1,0 +1,58 @@
+[report] Planning sub-questions…
+[report_builder] step 1: PLAN
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] plan: 5 sub-questions
+[report] Plan ready: 5 sub-questions.
+[report] Retrieving evidence…
+[report_builder] step 2: RETRIEVE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] initial evidence: 19 chunks
+[report] Retrieved 19 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report_builder] step 3: REASON & GAP-FILL
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Reasoning loop done (10 tool turns).
+[report_builder] final evidence: 19 chunks
+[report] Synthesizing report…
+[report_builder] step 4: SYNTHESIZE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Draft synthesized (8576 chars).
+[report] Self-critiquing draft…
+[report_builder] step 5: SELF-CRITIQUE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] critique flagged: Report fails citation quality on two definitive counts: (1) '$150/seat Premium' for Claude for Teams is attributed to c2492, but that pricing figure appears nowhere in the c2492 evidence excerpt (or any other provided chunk); (2) the specific date range '2026-03-07 to 2026-03-31' for the four change_event chunks is fabricated — chunks c2690–c2693 contain only a one-line summary and a one-line detail with zero date information. Two alias-table rows (opus[1m], opusplan) cited to c1905 cannot be verified because the chunk is truncated after the 'sonnet[1m]' row; they may be legitimate from the unseen portion but exceed what the provided evidence can confirm. All body-cited chunk IDs are present in the Sources section; no enumeration completeness gaps of ≥2 missing items were found.
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Auditing citations for entailment…
+[report_builder] step 5b: ENTAILMENT AUDIT
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[report_builder] entailment audit: 1 bad citations / 38 checked

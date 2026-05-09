@@ -1,0 +1,85 @@
+[report] Planning sub-questions…
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Plan ready: 6 sub-questions.
+[report] Retrieving evidence…
+[report] Retrieved 0 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report] Reasoning loop done (8 tool turns).
+[report] Synthesizing report…
+[llm_backend] call: backend=sdk model=sonnet schema=no
+Fatal error in message reader: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details
+[llm_backend] transient-sdk retry (attempt 1/3), sleeping 5.0s: transient SDK subprocess failure: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details
+Fatal error in message reader: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details
+[llm_backend] transient-sdk retry (attempt 2/3), sleeping 15.0s: transient SDK subprocess failure: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details
+Fatal error in message reader: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details
+Traceback (most recent call last):
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 234, in _run_sdk_coro
+    asyncio.get_running_loop()
+RuntimeError: no running event loop
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 280, in _call_via_sdk
+    out = _run_sdk_coro(_run(), timeout)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 236, in _run_sdk_coro
+    return asyncio.run(asyncio.wait_for(coro, timeout=timeout))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jim/miniconda3/envs/llm/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/home/jim/miniconda3/envs/llm/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jim/miniconda3/envs/llm/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/jim/miniconda3/envs/llm/lib/python3.11/asyncio/tasks.py", line 489, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 264, in _run
+    async for msg in query(prompt=full_prompt, options=options):
+  File "/mnt/c/python/temp1/claude-agent-sdk-python/src/claude_agent_sdk/query.py", line 123, in query
+    async for message in client.process_query(
+  File "/mnt/c/python/temp1/claude-agent-sdk-python/src/claude_agent_sdk/_internal/client.py", line 120, in process_query
+    async for data in query.receive_messages():
+  File "/mnt/c/python/temp1/claude-agent-sdk-python/src/claude_agent_sdk/_internal/query.py", line 598, in receive_messages
+    raise Exception(message.get("error", "Unknown error"))
+Exception: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2797, in <module>
+    main()
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2793, in main
+    cmd_report(args)
+  File "/mnt/c/python/claude_docs_monitor/claude_docs_monitor.py", line 2301, in cmd_report
+    report = build_report(
+             ^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/report_builder.py", line 1072, in build_report
+    report_md = _synthesize(question, plan, final_evidence, model=model)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/report_builder.py", line 619, in _synthesize
+    raw = call_claude(
+          ^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 392, in call_claude
+    raise last_err
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 379, in call_claude
+    return _dispatch()
+           ^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 365, in _dispatch
+    return _call_via_sdk(prompt=prompt, stdin=stdin, model=model,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/c/python/claude_docs_monitor/llm_backend.py", line 286, in _call_via_sdk
+    raise RateLimitError(f"transient SDK subprocess failure: {e!s}") from e
+llm_backend.RateLimitError: transient SDK subprocess failure: Command failed with exit code 1 (exit code: 1)
+Error output: Check stderr output for details

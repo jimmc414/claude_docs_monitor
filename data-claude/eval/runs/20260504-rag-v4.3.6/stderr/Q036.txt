@@ -1,0 +1,41 @@
+[report] Planning sub-questions…
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Plan ready: 7 sub-questions.
+[report] Retrieving evidence…
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Retrieved 40 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report] Reasoning loop done (13 tool turns).
+[report] Synthesizing report…
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Draft synthesized (12417 chars).
+[report] Self-critiquing draft…
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Auditing citations for entailment…
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no

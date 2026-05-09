@@ -1,0 +1,39 @@
+E1: Reconstruction of v4.3.9 Q027 _initial_retrieve
+========================================================================
+
+Plan: 5 sub-questions, 5 strategies
+Run config: scope=['page'], since=None, until=None, k_per_sub=8, rerank=True
+
+Pool size (deduped, sorted by confidence): 20
+
+--- top-30 ---
+ 1. c1921  src=page          conf=10.000 model-config.md > Model configuration > Special model behavior > `default` model
+ 2. c1898  src=page          conf=8.000 microsoft-foundry.md > Claude Code on Microsoft Foundry > Setup > 4. Pin model v
+ 3. c746   src=page          conf=8.000 amazon-bedrock.md > Claude Code on Amazon Bedrock > Startup model checks
+ 4. c1558  src=page          conf=8.000 google-vertex-ai.md > Claude Code on Google Vertex AI > Startup model checks
+ 5. c745   src=page          conf=8.000 amazon-bedrock.md > Claude Code on Amazon Bedrock > Set up manually > 4. Pin mod
+ 6. c1557  src=page          conf=7.000 google-vertex-ai.md > Claude Code on Google Vertex AI > Set up manually > 5. Pin
+ 7. c1916  src=page          conf=7.000 model-config.md > Model configuration > Restrict model selection > Default model
+ 8. c2501  src=page          conf=6.000 third-party-integrations.md > Enterprise deployment overview > Best practices fo
+ 9. c3756  src=page          conf=4.000 errors.md > Error reference > Request errors > There's an issue with the selecte
+10. c2728  src=page          conf=4.000 agent-sdk/agent-loop.md > How the agent loop works > Control how the loop runs >
+11. c4760  src=page          conf=4.000 zero-data-retention.md > Zero data retention > Request ZDR
+12. c1904  src=page          conf=3.000 model-config.md > Model configuration > Available models
+13. c2683  src=page          conf=3.000 zero-data-retention.md > Zero data retention
+14. c1164  src=page          conf=3.000 costs.md > Manage costs effectively
+15. c8     src=page          conf=2.000 admin-setup.md > Set up Claude Code for your organization > Choose your API prov
+16. c9     src=page          conf=2.000 admin-setup.md > Set up Claude Code for your organization > Choose your API prov
+17. c2690  src=change_event  conf=0.000 change_event[19] > scheduled-tasks.md > feature (2026-03-07 03:14:34 UTC)
+18. c2692  src=change_event  conf=0.000 change_event[27] > fullscreen.md > feature (2026-03-31 20:58:58 UTC)
+19. c2693  src=change_event  conf=0.000 change_event[28] > github-enterprise-server.md > feature (2026-03-31 20:58:58 UT
+20. c2691  src=change_event  conf=0.000 change_event[26] > computer-use.md > feature (2026-03-31 20:58:58 UTC)
+
+========================================================================
+c1921 in top-30: True
+c1921 in pool at position: 1 (of 20)
+c1921 details: src=page conf=10.000 heading=model-config.md > Model configuration > Special model behavior > `default` model setting
+c1921 relevance_to: Are there different default model tiers or upgrade paths mentioned in the docs related to the April 23, 2026 change?
+
+Branch outcomes from plan:
+  -> c1921 in top-30: AGENT CURATION is the mechanism.
+     A2 (force-include top-K per sub-query) wouldn't help.

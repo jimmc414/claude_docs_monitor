@@ -1,0 +1,52 @@
+[report] Planning sub-questions…
+[report_builder] step 1: PLAN
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] plan: 5 sub-questions
+[report] Plan ready: 5 sub-questions.
+[report] Retrieving evidence…
+[report_builder] step 2: RETRIEVE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] initial evidence: 31 chunks
+[report] Retrieved 31 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report_builder] step 3: REASON & GAP-FILL
+[report] Reasoning loop done (16 tool turns).
+[report_builder] final evidence: 25 chunks
+[report] Synthesizing report…
+[report_builder] step 4: SYNTHESIZE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Draft synthesized (10227 chars).
+[report] Self-critiquing draft…
+[report_builder] step 5: SELF-CRITIQUE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] critique flagged: Fails: the Quick Comparison table (chunk 251) is missing three rows — Streaming Input, Hooks, and Custom Tools — and the ClaudeSDKClient Key Features list (chunk 277) omits both 'Same conversation' and 'Custom tools and hooks'; additionally, the redundancy/contradiction performance claim and the stop_task() method reference are uncited against the supplied evidence.
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Auditing citations for entailment…
+[report_builder] step 5b: ENTAILMENT AUDIT
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[report_builder] entailment audit: 1 bad citations / 47 checked

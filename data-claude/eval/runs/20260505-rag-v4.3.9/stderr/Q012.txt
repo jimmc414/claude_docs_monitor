@@ -1,0 +1,54 @@
+[report] Planning sub-questions…
+[report_builder] step 1: PLAN
+[llm_backend] backend resolved: sdk
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] plan: 7 sub-questions
+[report] Plan ready: 7 sub-questions.
+[report] Retrieving evidence…
+[report_builder] step 2: RETRIEVE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] initial evidence: 50 chunks
+[report] Retrieved 50 initial chunks.
+[report] Reasoning & gap-filling (agentic loop)…
+[report_builder] step 3: REASON & GAP-FILL
+[report] Reasoning loop done (19 tool turns).
+[report_builder] final evidence: 25 chunks
+[report] Synthesizing report…
+[report_builder] step 4: SYNTHESIZE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Draft synthesized (13692 chars).
+[report] Self-critiquing draft…
+[report_builder] step 5: SELF-CRITIQUE
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report_builder] critique flagged: No chunk_ids are cited in the body but absent from Sources, and coverage across the seven mechanisms is thorough; however the report fails on two counts: (1) Key Finding 2 labels the settings hierarchy 'four-layer' while the cited source c1536 and the report's own numbered list in Section 3 both enumerate exactly five layers — the specific characterization 'four-layer' is unsupported by any evidence chunk and is directly contradicted by c1536; (2) the CLAUDE.md content-type bullet list drawn from c188 silently replaces two of five evidence items — 'Project-specific context' (swapped for 'architecture notes', a phrase that comes from c1504's glossary entry, not from c188) and 'Common commands or workflows' (narrowed to 'build commands') — leaving both enumerated items unrepresented, a 2-item gap that exceeds the single-item summarization threshold.
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[llm_backend] call: backend=sdk model=sonnet schema=no
+[report] Auditing citations for entailment…
+[report_builder] step 5b: ENTAILMENT AUDIT
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[llm_backend] call: backend=sdk model=haiku schema=no
+[report_builder] entailment audit: 1 bad citations / 59 checked

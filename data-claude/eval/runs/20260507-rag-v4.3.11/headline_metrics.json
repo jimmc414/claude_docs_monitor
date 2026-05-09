@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "date": "2026-05-07",
+    "subset": [
+      "Q005",
+      "Q010",
+      "Q012",
+      "Q021",
+      "Q027",
+      "Q032",
+      "Q036",
+      "Q049",
+      "Q050"
+    ],
+    "trials_per_variant": 3,
+    "q027_pass_bar": ">=2/3 correct"
+  },
+  "V1_prompt_fix": {
+    "branch": "rag-v4.3.11-prompt-fix",
+    "commit": "4830446",
+    "q027_correct_count": 0,
+    "q027_verdicts": [
+      "incorrect",
+      "incorrect",
+      "ERR"
+    ],
+    "q027_passes_bar": false,
+    "median_n_citations": 54.0,
+    "median_n_unique_chunks_cited": 16.5,
+    "median_n_evidence": 25.0,
+    "median_citation_alignment_pass_rate": 0.5,
+    "stdev_n_evidence": 2.755972535310288
+  },
+  "V2_deterministic_topn": {
+    "branch": "rag-v4.3.11-deterministic-topn",
+    "commit": "c8f0560",
+    "q027_correct_count": 1,
+    "q027_verdicts": [
+      "incorrect",
+      "correct",
+      "incorrect"
+    ],
+    "q027_passes_bar": false,
+    "median_n_citations": 54,
+    "median_n_unique_chunks_cited": 13,
+    "median_n_evidence": 25,
+    "median_citation_alignment_pass_rate": 0.5,
+    "stdev_n_evidence": 1.888637489554723
+  },
+  "recommendation": "ship_V2",
+  "rationale_summary": "V2 strictly dominates V1 on Q027 (1/3 vs 0/3). Both fail strict >=2/3 bar but V2 fails for an upstream reason (planner does not surface c1921 in initial_evidence reliably) while V1 fails because the agent drops c1921 even when surfaced. V2 introduces no stable-Q regressions outside the noise floor. Retrieval-stability is the explicit next round."
+}

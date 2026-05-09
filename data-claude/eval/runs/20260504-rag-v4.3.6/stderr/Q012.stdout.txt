@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260504-223516-what-are-all-the-mechanisms-for-carrying-kno
+wledge-or-instru.md
+Evidence JSON: 
+data-claude/reports/20260504-223516-what-are-all-the-mechanisms-for-carrying-kno
+wledge-or-instru.json
+Loop turns: 20, evidence: 25 chunks, elapsed: 756.7s

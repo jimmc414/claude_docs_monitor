@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260505-221149-how-does-the-python-agent-sdks-query-functio
+n-differ-from-cl.md
+Evidence JSON: 
+data-claude/reports/20260505-221149-how-does-the-python-agent-sdks-query-functio
+n-differ-from-cl.json
+Loop turns: 16, evidence: 25 chunks, elapsed: 1061.1s

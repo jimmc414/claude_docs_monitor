@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260504-201214-what-is-the-opusplan-model-alias-and-what-ar
+e-its-specific-l.md
+Evidence JSON: 
+data-claude/reports/20260504-201214-what-is-the-opusplan-model-alias-and-what-ar
+e-its-specific-l.json
+Loop turns: 8, evidence: 0 chunks, elapsed: 115.8s

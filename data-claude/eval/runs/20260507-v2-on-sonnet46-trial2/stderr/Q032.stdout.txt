@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260507-170252-what-tools-and-operations-does-bypasspermiss
+ions-mode-not-sk.md
+Evidence JSON: 
+data-claude/reports/20260507-170252-what-tools-and-operations-does-bypasspermiss
+ions-mode-not-sk.json
+Loop turns: 9, evidence: 25 chunks, elapsed: 1077.5s

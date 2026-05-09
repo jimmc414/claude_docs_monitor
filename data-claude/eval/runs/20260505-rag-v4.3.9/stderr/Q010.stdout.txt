@@ -1,0 +1,8 @@
+
+Report written: 
+data-claude/reports/20260505-201437-the-bash-permission-rule-bashls-does-it-matc
+h-the-command-ls.md
+Evidence JSON: 
+data-claude/reports/20260505-201437-the-bash-permission-rule-bashls-does-it-matc
+h-the-command-ls.json
+Loop turns: 12, evidence: 18 chunks, elapsed: 737.5s

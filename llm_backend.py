@@ -85,7 +85,7 @@ def _is_sdk_opaque_failure(err_text: str) -> bool:
 _MODEL_ALIASES_API = {
     "sonnet": "claude-sonnet-4-6",
     "opus":   "claude-opus-4-7",
-    "haiku":  "claude-haiku-4-5-20250514",
+    "haiku":  "claude-haiku-4-5-20251001",
 }
 
 

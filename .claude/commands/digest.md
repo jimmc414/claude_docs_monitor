@@ -8,20 +8,18 @@ argument-hint: [--model MODEL] [--report DIR]
 
 Run the AI-powered digest on the latest documentation changes.
 
+The script writes natively to `data-claude/` in the project directory, so there's no copy step.
+
 ## Instructions
 
 ### Step 1: Run the digest command
 
 ```bash
-cd ~/.local/share/claude-docs-monitor && python ~/.claude/lib/claude_docs_monitor.py digest $ARGUMENTS
+cd /mnt/c/python/claude_docs_monitor && python ~/.claude/lib/claude_docs_monitor.py digest $ARGUMENTS
 ```
 
-### Step 2: Copy outputs to project directory
+Output lands at `data-claude/digest.md` and `data-claude/digest.html`.
 
-```bash
-cp ~/.local/share/claude-docs-monitor/data/digest.* /mnt/c/python/claude_docs_monitor/ 2>/dev/null || true
-```
+### Step 2: Show the digest
 
-### Step 3: Show the digest
-
-Read `/mnt/c/python/claude_docs_monitor/digest.md` and present it to the user.
+Read `/mnt/c/python/claude_docs_monitor/data-claude/digest.md` and present it to the user.

@@ -35,9 +35,9 @@ from claude_docs_monitor import (
 
 # ── Configuration ───────────────────────────────────────────────────────────
 
-# DB path: env var → canonical XDG location → local ./data/
-_CANONICAL_DB = Path.home() / ".local/share/claude-docs-monitor/data/snapshots.db"
-_LOCAL_DB = Path("data/snapshots.db")
+# DB path: env var → canonical XDG location → local ./data-claude/
+_CANONICAL_DB = Path.home() / ".local/share/claude-docs-monitor/data-claude/snapshots.db"
+_LOCAL_DB = Path("data-claude/snapshots.db")
 
 DB_PATH = Path(
     os.environ.get("DOCS_MONITOR_DB")

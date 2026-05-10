@@ -35,7 +35,7 @@ except ImportError:
 
 INDEX_URL = "https://code.claude.com/docs/llms.txt"
 BASE_URL = "https://code.claude.com"
-DB_DIR = Path("data")
+DB_DIR = Path("data-claude")
 DB_PATH = DB_DIR / "snapshots.db"
 MAX_CONCURRENT = 5
 MAX_RETRIES = 3
@@ -882,7 +882,7 @@ async def cmd_check(args):
         save_diff_files(changes, args.save_diffs)
 
     # Always dump latest pages to disk
-    dump_dir = Path(getattr(args, "dump", None) or "data/pages")
+    dump_dir = Path(getattr(args, "dump", None) or "data-claude/pages")
     dump_dir.mkdir(parents=True, exist_ok=True)
     written = 0
     for result in results:
@@ -896,7 +896,7 @@ async def cmd_check(args):
         print(f"Updated {written} pages in {dump_dir}/")
 
     # Step 6: Generate reports
-    report_dir = Path(getattr(args, "report", None) or "data")
+    report_dir = Path(getattr(args, "report", None) or "data-claude")
     report_data = {
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "first_run": first_run,
@@ -1022,7 +1022,7 @@ def cmd_rebuild_history(args):
     """Rebuild history.html and history.md from all stored snapshots."""
     conn = init_db()
     include_html = getattr(args, "include_html", False)
-    output_dir = Path(getattr(args, "report", None) or "data")
+    output_dir = Path(getattr(args, "report", None) or "data-claude")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Delete existing history files
@@ -1932,17 +1932,17 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Monitor Claude Code documentation (code.claude.com/docs/) for changes.",
         epilog="""examples:
-  %(prog)s                              fetch all pages, show diffs, update data/pages/
+  %(prog)s                              fetch all pages, show diffs, update data-claude/pages/
   %(prog)s check --quiet                summary table only, no inline diffs
   %(prog)s check --save-diffs out/      also write .diff files to out/
-  %(prog)s check --dump ~/docs          dump pages to ~/docs instead of data/pages/
+  %(prog)s check --dump ~/docs          dump pages to ~/docs instead of data-claude/pages/
   %(prog)s check --poll 3600            re-check every hour
   %(prog)s history                      show recent snapshot history (all pages)
   %(prog)s history URL                  show history for one page
   %(prog)s diff URL                     show diff between last two snapshots of a page
   %(prog)s urls                         list all tracked URLs with status
   %(prog)s rebuild-history               regenerate history files from DB
-  %(prog)s dump                         export latest snapshots to data/pages/
+  %(prog)s dump                         export latest snapshots to data-claude/pages/
   %(prog)s dump ~/review                export to a custom directory
   %(prog)s digest                       AI-analyze latest diffs into an actionable digest
   %(prog)s digest --model opus          use a different model for analysis
@@ -1962,7 +1962,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch all pages, detect changes, show diffs, update local copies (default)",
         description="Fetch every doc page, compare against the previous snapshot, "
                     "display a change summary with unified diffs, and update "
-                    "the local .md files in data/pages/.",
+                    "the local .md files in data-claude/pages/.",
     )
     check_p.add_argument(
         "--save-diffs", metavar="DIR",
@@ -1978,11 +1978,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_p.add_argument(
         "--dump", metavar="DIR",
-        help="Override page dump directory (default: data/pages)",
+        help="Override page dump directory (default: data-claude/pages)",
     )
     check_p.add_argument(
         "--report", metavar="DIR",
-        help="Override report output directory (default: data/)",
+        help="Override report output directory (default: data-claude/)",
     )
     check_p.add_argument(
         "--include-html", action="store_true",
@@ -2016,7 +2016,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rebuild_p.add_argument(
         "--report", metavar="DIR",
-        help="Override report output directory (default: data/)",
+        help="Override report output directory (default: data-claude/)",
     )
     rebuild_p.add_argument(
         "--include-html", action="store_true",
@@ -2029,8 +2029,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Export latest page snapshots as .md files (from DB, no network)",
     )
     dump_p.add_argument(
-        "dir", nargs="?", default="data/pages",
-        help="Output directory (default: data/pages)",
+        "dir", nargs="?", default="data-claude/pages",
+        help="Output directory (default: data-claude/pages)",
     )
 
     # digest
@@ -2040,7 +2040,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     digest_p.add_argument(
         "--report", metavar="DIR",
-        help="Report directory (default: data/)",
+        help="Report directory (default: data-claude/)",
     )
     digest_p.add_argument(
         "--model", default="sonnet",

@@ -30,7 +30,7 @@ MCP Server (mcp_server.py — optional, read-only)
 
 ### Database Schema
 
-Three tables in `data/snapshots.db`:
+Three tables in `data-claude/snapshots.db`:
 
 **`index_snapshots`** — tracks the llms.txt index itself (append-only):
 - `id` INTEGER PK, `fetched_at` TEXT, `content` TEXT, `hash` TEXT, `urls_json` TEXT
@@ -56,7 +56,7 @@ Three tables in `data/snapshots.db`:
 
 ### Data Flow: `digest` command
 
-1. Read `data/report.md` → check for changes (| Changed | 0 |)
+1. Read `data-claude/report.md` → check for changes (| Changed | 0 |)
 2. Extract `## Diffs` section to minimize tokens
 3. **Phase 1 — Structured classification**: Pipe diffs to `claude -p` with `--output-format json --json-schema` → parse JSON → store events in `change_events` table (skips if already classified for this run)
 4. **Phase 2 — Text digest**: Pipe diffs to `claude -p --output-format text` → write `digest.md` and `digest.html`
@@ -87,7 +87,7 @@ Three tables in `data/snapshots.db`:
 | `history` | No | `[URL]` positional |
 | `diff` | No | `URL` positional (required) |
 | `urls` | No | (none) |
-| `dump` | No | `[DIR]` positional (default: data/pages) |
+| `dump` | No | `[DIR]` positional (default: data-claude/pages) |
 | `rebuild-history` | No | `--report DIR`, `--include-html` |
 
 ## MCP Server (mcp_server.py)
@@ -110,16 +110,16 @@ The MCP server **only reads** the database — it cannot fetch docs, generate di
 | URI | Returns |
 |-----|---------|
 | `docs://pages/{name}` | Latest cached page content (e.g. `docs://pages/hooks.md`) |
-| `docs://digest` | Contents of `data/digest.md` |
-| `docs://report` | Contents of `data/report.md` |
+| `docs://digest` | Contents of `data-claude/digest.md` |
+| `docs://report` | Contents of `data-claude/report.md` |
 
 ### Configuration
 
-Project-scoped `.mcp.json` auto-registers the server. DB path: `DOCS_MONITOR_DB` env var → `~/.local/share/claude-docs-monitor/data/snapshots.db` → `./data/snapshots.db`.
+Project-scoped `.mcp.json` auto-registers the server. DB path: `DOCS_MONITOR_DB` env var → `~/.local/share/claude-docs-monitor/data-claude/snapshots.db` → `./data-claude/snapshots.db`.
 
 ## Output Files
 
-All written to `data/` (override with `--report DIR`):
+All written to `data-claude/` (override with `--report DIR`):
 
 | File | Lifecycle | Content |
 |------|-----------|---------|
@@ -134,13 +134,13 @@ All written to `data/` (override with `--report DIR`):
 Four skills in `.claude/commands/`:
 
 ### `/check-docs`
-Runs the full monitor pipeline. Auto-runs `/digest` if changes detected. Copies all outputs from `~/.local/share/claude-docs-monitor/data/` to the project directory.
+Runs the full monitor pipeline from the project directory. The script writes natively to `data-claude/`, so there is no copy step. Auto-runs `/digest` if changes detected.
 
 ### `/digest`
 Standalone AI digest. Reads latest `report.md`, analyzes diffs, writes digest files. Now also stores structured change events in SQLite.
 
 ### `/ask-docs`
-Q&A against cached doc pages. Uses Grep to search `data/pages/*.md`, reads top matches, synthesizes answer. No network calls.
+Q&A against cached doc pages. Uses Grep to search `data-claude/pages/*.md`, reads top matches, synthesizes answer. No network calls.
 
 ### `/query-docs`
 Query the change intelligence database. Searches accumulated change events by category, severity, page, keyword, or date range.
@@ -153,7 +153,7 @@ The script and skills live in two places:
 |----------|---------|
 | Repo: `claude_docs_monitor.py`, `.claude/commands/*.md` | Source of truth, version-controlled |
 | System: `~/.claude/lib/claude_docs_monitor.py`, `~/.claude/commands/*.md` | Working copies used by skills |
-| Data: `~/.local/share/claude-docs-monitor/data/` | Canonical working directory for script I/O |
+| Data: `~/.local/share/claude-docs-monitor/data-claude/` | Canonical working directory for script I/O |
 | Project: `pages/`, `report.*`, `history.*`, `digest.*` | Mirror copied after each run for git tracking |
 
 After modifying the script, sync both copies:

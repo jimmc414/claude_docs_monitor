@@ -13,7 +13,7 @@ Search and filter the accumulated change intelligence database for Claude Code d
 ### Step 1: Run the query command
 
 ```bash
-cd ~/.local/share/claude-docs-monitor && python ~/.claude/lib/claude_docs_monitor.py query $ARGUMENTS
+cd /mnt/c/python/claude_docs_monitor && python ~/.claude/lib/claude_docs_monitor.py query $ARGUMENTS
 ```
 
 ### Step 2: Present results

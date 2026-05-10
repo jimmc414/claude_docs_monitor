@@ -106,3 +106,25 @@ demo/
 # Snapshot database (binary, grows with each run)
 snapshots.db
 data/
+
+# Docs monitor regenerable outputs (data-claude/ tree)
+data-claude/digest.html
+data-claude/digest.md
+data-claude/report.html
+data-claude/report.md
+data-claude/history.html
+data-claude/history.md
+data-claude/historical_digest.md
+data-claude/reports/
+
+# Root-anchored regenerable outputs (legacy locations; prevent recreation)
+/digest.html
+/digest.md
+/report.html
+/report.md
+/history.html
+/history.md
+/historical_digest.md
+
+# Claude Code scheduled task lock
+.claude/scheduled_tasks.lock

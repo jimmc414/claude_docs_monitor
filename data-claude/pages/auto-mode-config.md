@@ -6,10 +6,10 @@
 
 > Tell the auto mode classifier which repos, buckets, and domains your organization trusts. Set environment context, override the default block and allow rules, and inspect your effective config with the auto-mode CLI subcommands.
 
-[Auto mode](/en/permission-modes#eliminate-prompts-with-auto-mode) lets Claude Code run without permission prompts by routing each tool call through a classifier that blocks anything irreversible, destructive, or aimed outside your environment. Use the `autoMode` settings block to tell that classifier which repos, buckets, and domains your organization trusts, so it stops blocking routine internal operations.
+[Auto mode](/en/permission-modes#eliminate-prompts-with-auto-mode) lets Claude Code run without routine permission prompts by routing tool calls through a classifier that blocks anything irreversible, destructive, or aimed outside your environment. Deny and explicit ask rules are evaluated before the classifier and still block or prompt. Use the `autoMode` settings block to tell that classifier which repos, buckets, and domains your organization trusts, so it stops blocking routine internal operations.
 
 <Note>
-  Auto mode is available on Max, Team, Enterprise, and API plans through the Anthropic API. It is not available on Pro or on Bedrock, Vertex, or Foundry. If Claude Code reports auto mode as unavailable for your account, check the [full requirements](/en/permission-modes#eliminate-prompts-with-auto-mode), which also cover the supported models and admin enablement on Team and Enterprise plans.
+  Auto mode is available to all users on the Anthropic API. On Amazon Bedrock, Google Cloud Vertex AI, and Microsoft Foundry, you must first [set `CLAUDE_CODE_ENABLE_AUTO_MODE`](/en/permission-modes#enable-auto-mode-on-bedrock-vertex-ai-or-foundry). If Claude Code reports auto mode as unavailable for your account, check the [full requirements](/en/permission-modes#eliminate-prompts-with-auto-mode), which also cover the supported models and admin enablement on Team and Enterprise plans.
 </Note>
 
 Out of the box, the classifier trusts only the working directory and the current repo's configured remotes. Actions like pushing to your company's source-control org or writing to a team cloud bucket are blocked until you add them to `autoMode.environment`.
@@ -33,7 +33,7 @@ For rules that apply across projects, such as trusted infrastructure or organiza
 | Scope                          | File                                            | Use for                                              |
 | :----------------------------- | :---------------------------------------------- | :--------------------------------------------------- |
 | One developer                  | `~/.claude/settings.json`                       | Personal trusted infrastructure                      |
-| One project, one developer     | `.claude/settings.local.json`                   | Per-project trusted buckets or services, gitignored  |
+| One project, one developer     | `.claude/settings.local.json`                   | Per-project trusted buckets or services              |
 | Organization-wide              | [Managed settings](/en/server-managed-settings) | Trusted infrastructure distributed to all developers |
 | `--settings` flag or Agent SDK | Inline JSON                                     | Per-invocation overrides for automation              |
 
@@ -110,7 +110,9 @@ Inside the classifier, precedence works in four tiers:
 
 General requests don't count as explicit intent. Asking Claude to "clean up the repo" does not authorize force-pushing, but asking Claude to "force-push this branch" does.
 
-To loosen, add to `allow` when the classifier repeatedly flags a routine pattern the default exceptions don't cover. To tighten, add to `soft_deny` for destructive risks specific to your environment that the defaults miss, or to `hard_deny` for security boundaries that must never be crossed. To keep the built-in rules while adding your own, include the literal string `"$defaults"` in the array. The default rules are spliced in at that position, so your custom rules can go before or after them, and you continue to inherit updates as the built-in list changes across releases.
+To loosen, add to `allow` when the classifier repeatedly flags a routine pattern the default exceptions don't cover. To tighten, add to `soft_deny` for destructive risks specific to your environment that the defaults miss, or to `hard_deny` for security boundaries that must never be crossed.
+
+To keep the built-in rules while adding your own, include the literal string `"$defaults"` in the array. The default rules are spliced in at that position, so your custom rules can go before or after them, and you continue to inherit updates as the built-in list changes across releases.
 
 ```json theme={null}
 {
@@ -138,7 +140,7 @@ To loosen, add to `allow` when the classifier repeatedly flags a routine pattern
 ```
 
 <Danger>
-  Setting any of `environment`, `allow`, `soft_deny`, or `hard_deny` without `"$defaults"` replaces the entire default list for that section. A `soft_deny` array without `"$defaults"` discards every built-in soft block rule, including force push, `curl | bash`, and production deploys. A `hard_deny` array without `"$defaults"` discards the built-in data exfiltration and safety-check bypass rules.
+  Setting any of `environment`, `allow`, `soft_deny`, or `hard_deny` without `"$defaults"` replaces the entire default list for that section. A `soft_deny` array without `"$defaults"` discards every built-in soft block rule, including force push, `curl | bash`, and production deploys. A `hard_deny` array without `"$defaults"` discards the built-in data exfiltration and auto-mode bypass rules.
 </Danger>
 
 Each section is evaluated independently, so setting `environment` alone leaves the default `allow`, `soft_deny`, and `hard_deny` lists intact. Only omit `"$defaults"` when you intend to take full ownership of the list. To do that safely, run `claude auto-mode defaults` to print the built-in rules, copy them into your settings file, then review each rule against your own pipeline and risk tolerance.

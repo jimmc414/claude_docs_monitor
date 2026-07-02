@@ -1,2 +1,4 @@
 httpx[http2]>=0.27,<1.0
-# Optional: rich (colored output), mcp (MCP server — see requirements-mcp.txt)
+# Optional: rich (colored output), mcp (MCP server — see requirements-mcp.txt),
+#           PyYAML (richer parsing of data-claude/config.yaml; a built-in
+#                   key:value fallback is used if PyYAML isn't installed)

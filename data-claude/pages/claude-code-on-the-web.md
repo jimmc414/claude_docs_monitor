@@ -32,10 +32,14 @@ This page covers:
 
 Cloud sessions need access to your GitHub repositories to clone code and push branches. You can grant access in two ways:
 
-| Method           | How it works                                                                                                                                 | Best for                                        |
-| :--------------- | :------------------------------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------- |
-| **GitHub App**   | Install the Claude GitHub App on specific repositories during [web onboarding](/en/web-quickstart). Access is scoped per repository.         | Teams that want explicit per-repo authorization |
-| **`/web-setup`** | Run `/web-setup` in your terminal to sync your local `gh` CLI token to your Claude account. Access matches whatever your `gh` token can see. | Individual developers who already use `gh`      |
+| Method           | How it works                                                                                | Best for                                                                |
+| :--------------- | :------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------- |
+| **GitHub App**   | Authorize the Claude GitHub App during [web onboarding](/en/web-quickstart).                | Browser onboarding; teams that want [Auto-fix](#auto-fix-pull-requests) |
+| **`/web-setup`** | Run `/web-setup` in your terminal to sync your local `gh` CLI token to your Claude account. | Individual developers who already use `gh`                              |
+
+<Note>
+  With either method, a cloud session can access any repository the connecting GitHub account can see, not just the repositories the Claude GitHub App is installed on. App installation enables PR webhooks for [Auto-fix](#auto-fix-pull-requests); it is not a session-level access control. To restrict which repositories your team can reach from cloud sessions, restrict access on GitHub itself, for example by limiting team or repository membership for the connected GitHub accounts.
+</Note>
 
 Either method works. [`/schedule`](/en/routines) checks for either form of access and prompts you to run `/web-setup` if neither is configured. See [Connect from your terminal](/en/web-quickstart#connect-from-your-terminal) for the `/web-setup` walkthrough.
 
@@ -55,19 +59,20 @@ Each session runs in a fresh Anthropic-managed VM with your repository cloned. T
 
 Cloud sessions start from a fresh clone of your repository. Anything committed to the repo is available. Anything you've installed or configured only on your own machine is not.
 
-|                                                                       | Available in cloud sessions | Why                                                                                                                                              |
-| :-------------------------------------------------------------------- | :-------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Your repo's `CLAUDE.md`                                               | Yes                         | Part of the clone                                                                                                                                |
-| Your repo's `.claude/settings.json` hooks                             | Yes                         | Part of the clone                                                                                                                                |
-| Your repo's `.mcp.json` MCP servers                                   | Yes                         | Part of the clone                                                                                                                                |
-| Your repo's `.claude/rules/`                                          | Yes                         | Part of the clone                                                                                                                                |
-| Your repo's `.claude/skills/`, `.claude/agents/`, `.claude/commands/` | Yes                         | Part of the clone                                                                                                                                |
-| Plugins declared in `.claude/settings.json`                           | Yes                         | Installed at session start from the [marketplace](/en/plugin-marketplaces) you declared. Requires network access to reach the marketplace source |
-| Your user `~/.claude/CLAUDE.md`                                       | No                          | Lives on your machine, not in the repo                                                                                                           |
-| Plugins enabled only in your user settings                            | No                          | User-scoped `enabledPlugins` lives in `~/.claude/settings.json`. Declare them in the repo's `.claude/settings.json` instead                      |
-| MCP servers you added with `claude mcp add`                           | No                          | Those write to your local user config, not the repo. Declare the server in [`.mcp.json`](/en/mcp#project-scope) instead                          |
-| Static API tokens and credentials                                     | No                          | No dedicated secrets store exists yet. See below                                                                                                 |
-| Interactive auth like AWS SSO                                         | No                          | Not supported. SSO requires browser-based login that can't run in a cloud session                                                                |
+|                                                                           | Available in cloud sessions | Why                                                                                                                                                                        |
+| :------------------------------------------------------------------------ | :-------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Your repo's `CLAUDE.md`                                                   | Yes                         | Part of the clone                                                                                                                                                          |
+| Your repo's `.claude/settings.json` hooks                                 | Yes                         | Part of the clone                                                                                                                                                          |
+| Your repo's `.mcp.json` MCP servers                                       | Yes                         | Part of the clone                                                                                                                                                          |
+| Your repo's `.claude/rules/`                                              | Yes                         | Part of the clone                                                                                                                                                          |
+| Your repo's `.claude/skills/`, `.claude/agents/`, `.claude/commands/`     | Yes                         | Part of the clone                                                                                                                                                          |
+| Plugins declared in `.claude/settings.json`                               | Yes                         | Installed at session start from the [marketplace](/en/plugin-marketplaces) you declared. Requires network access to reach the marketplace source                           |
+| Your user `~/.claude/CLAUDE.md`                                           | No                          | Lives on your machine, not in the repo                                                                                                                                     |
+| Your user `~/.claude/skills/`, `~/.claude/agents/`, `~/.claude/commands/` | No                          | Live on your machine, not in the repo. Commit them to the repo's `.claude/` directory instead. Skills you enable on claude.ai are loaded into cloud sessions automatically |
+| Plugins enabled only in your user settings                                | No                          | User-scoped `enabledPlugins` lives in `~/.claude/settings.json`. Declare them in the repo's `.claude/settings.json` instead                                                |
+| MCP servers you added with `claude mcp add`                               | No                          | Those write to your local user config, not the repo. Declare the server in [`.mcp.json`](/en/mcp#project-scope) instead                                                    |
+| Static API tokens and credentials                                         | No                          | No dedicated secrets store exists yet. See below                                                                                                                           |
+| Interactive auth like AWS SSO                                             | No                          | Not supported. SSO requires browser-based login that can't run in a cloud session                                                                                          |
 
 To make configuration available in cloud sessions, commit it to the repo. A dedicated secrets store is not yet available. Both environment variables and setup scripts are stored in the environment configuration, visible to anyone who can edit that environment. If you need secrets in a cloud session, add them as environment variables with that visibility in mind.
 
@@ -109,11 +114,13 @@ The `gh` CLI is not pre-installed. If you need a `gh` command the built-in tools
   </Step>
 </Steps>
 
-### Link artifacts back to the session
+### Link output back to the session
 
 Each cloud session has a transcript URL on claude.ai, and the session can read its own ID from the `CLAUDE_CODE_REMOTE_SESSION_ID` environment variable. Use this to put a traceable link in PR bodies, commit messages, Slack posts, or generated reports so a reviewer can open the run that produced them.
 
-The variable's value uses a `cse_` prefix, while the transcript URL path takes the same ID with a `session_` prefix. Substitute the prefix when building the link. The following command prints the URL:
+As of v2.1.179, commits that Claude creates in a web session include a `Claude-Session: <url>` git trailer, and PR bodies include the session URL on its own line. {/* min-version: 2.1.182 */}From v2.1.182, set [`attribution.sessionUrl`](/en/settings#attribution-settings) to `false` to omit the trailer and the PR-body link.
+
+To include the session link in something other than a commit or PR, such as a Slack message Claude posts or a report file it writes, have Claude run the following command and use its output. The command converts the `cse_` prefix in the environment variable's value to the `session_` prefix that the transcript URL expects:
 
 ```bash theme={null}
 echo "https://claude.ai/code/${CLAUDE_CODE_REMOTE_SESSION_ID/#cse_/session_}"
@@ -313,6 +320,7 @@ Environments run behind an HTTP/HTTPS network proxy for security and abuse preve
 * Protection against malicious requests
 * Rate limiting and abuse prevention
 * Content filtering for enhanced security
+* A DNS-level audit trail of requested hostnames
 
 ### Default allowed domains
 
@@ -685,7 +693,7 @@ For context management specifically:
 | `/context` | Yes                     | Shows what's currently in the context window                                                                             |
 | `/clear`   | No                      | Start a new session from the sidebar instead                                                                             |
 
-Auto-compaction runs automatically when the context window approaches capacity, the same as in the CLI. To trigger it earlier, set [`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`](/en/env-vars) in your [environment variables](#configure-your-environment). For example, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70` compacts at 70% capacity instead of the default \~95%. To change the effective window size for compaction calculations, use [`CLAUDE_CODE_AUTO_COMPACT_WINDOW`](/en/env-vars).
+Auto-compaction runs automatically when the context window approaches capacity. To trigger it earlier, set [`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`](/en/env-vars) in your [environment variables](#configure-your-environment). For example, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=70` compacts at 70% capacity instead of waiting until the window is nearly full. To change the effective window size for compaction calculations, use [`CLAUDE_CODE_AUTO_COMPACT_WINDOW`](/en/env-vars).
 
 [Subagents](/en/sub-agents) work the same way they do locally. Claude can spawn them with the Task tool to offload research or parallel work into a separate context window, keeping the main conversation lighter. Subagents defined in your repo's `.claude/agents/` are picked up automatically. [Agent teams](/en/agent-teams) are off by default but can be enabled by adding `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` to your [environment variables](#configure-your-environment).
 
@@ -739,6 +747,8 @@ There are a few ways to turn on auto-fix depending on where the PR came from and
 * **From the mobile app**: tell Claude to auto-fix the PR, for example "watch this PR and fix any CI failures or review comments"
 * **Any existing PR**: paste the PR URL into a session and tell Claude to auto-fix it
 
+Auto-fix is a per-PR toggle. To stop monitoring, open the CI status bar in the web session and clear the **Auto-fix** toggle, or tell Claude to stop watching the PR.
+
 ### How Claude responds to PR activity
 
 When auto-fix is active, Claude receives GitHub events for the PR including new review comments and CI check failures. For each event, Claude investigates and decides how to proceed:
@@ -746,6 +756,8 @@ When auto-fix is active, Claude receives GitHub events for the PR including new 
 * **Clear fixes**: if Claude is confident in a fix and it doesn't conflict with earlier instructions, Claude makes the change, pushes it, and explains what was done in the session
 * **Ambiguous requests**: if a reviewer's comment could be interpreted multiple ways or involves something architecturally significant, Claude asks you before acting
 * **Duplicate or no-action events**: if an event is a duplicate or requires no change, Claude notes it in the session and moves on
+
+GitHub does not emit a webhook when the base branch advances and creates a merge conflict, so auto-fix cannot react to conflicts on its own. To resolve a conflict, open the session and ask Claude to rebase.
 
 Claude may reply to review comment threads on GitHub as part of resolving them. These replies are posted using your GitHub account, so they appear under your username, but each reply is labeled as coming from Claude Code so reviewers know it was written by the agent and not by you directly.
 
@@ -772,15 +784,15 @@ If a new session fails to start with `Session creation failed` or stalls at prov
 
 * Check [status.claude.com](https://status.claude.com) for cloud session incidents
 * Retry after a minute, as capacity is provisioned on demand
-* Confirm your repository is reachable. Private repositories require either the GitHub App installed with access to that repository, or a `gh` token synced via `/web-setup`. See [GitHub authentication options](#github-authentication-options).
+* Confirm your repository is reachable. The connecting GitHub account must have access to the repository on GitHub, either through the Claude GitHub App authorization or a `gh` token synced via `/web-setup` — installing the App on the repository is not required. See [GitHub authentication options](#github-authentication-options).
 
 ### Remote Control session expired or access denied
 
-`--teleport` connects through the same Remote Control session infrastructure that cloud sessions use, so authentication and session-expiry errors surface with Remote Control wording. You may see `Remote Control session has expired` or `Access denied`. The connection token is short-lived and scoped to your account.
+`--teleport` connects through the same Remote Control session infrastructure that cloud sessions use, so authentication and session-expiry errors surface with Remote Control wording. You may see `Remote Control session expired` or `Access denied`. The connection token is short-lived and scoped to your account.
 
 * Run `/login` locally to refresh your credentials, then reconnect
 * Confirm you are signed in to the same account that owns the session
-* If you see `Remote Control may not be available for this organization`, your admin has not enabled remote sessions for your plan
+* If you see `Remote Control may not be available for this organization`, your admin has not enabled cloud sessions for your plan
 
 ### Environment expired
 

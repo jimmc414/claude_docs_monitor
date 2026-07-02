@@ -144,27 +144,28 @@ The following example puts these steps together. It registers a `PreToolUse` hoo
 
 The SDK provides hooks for different stages of agent execution. Some hooks are available in both SDKs, while others are TypeScript-only.
 
-| Hook Event           | Python SDK | TypeScript SDK | What triggers it                                                               | Example use case                                |
-| -------------------- | ---------- | -------------- | ------------------------------------------------------------------------------ | ----------------------------------------------- |
-| `PreToolUse`         | Yes        | Yes            | Tool call request (can block or modify)                                        | Block dangerous shell commands                  |
-| `PostToolUse`        | Yes        | Yes            | Tool execution result                                                          | Log all file changes to audit trail             |
-| `PostToolUseFailure` | Yes        | Yes            | Tool execution failure                                                         | Handle or log tool errors                       |
-| `PostToolBatch`      | No         | Yes            | A full batch of tool calls resolves, once per batch before the next model call | Inject conventions once for the whole batch     |
-| `UserPromptSubmit`   | Yes        | Yes            | User prompt submission                                                         | Inject additional context into prompts          |
-| `Stop`               | Yes        | Yes            | Agent execution stop                                                           | Save session state before exit                  |
-| `SubagentStart`      | Yes        | Yes            | Subagent initialization                                                        | Track parallel task spawning                    |
-| `SubagentStop`       | Yes        | Yes            | Subagent completion                                                            | Aggregate results from parallel tasks           |
-| `PreCompact`         | Yes        | Yes            | Conversation compaction request                                                | Archive full transcript before summarizing      |
-| `PermissionRequest`  | Yes        | Yes            | Permission dialog would be displayed                                           | Custom permission handling                      |
-| `SessionStart`       | No         | Yes            | Session initialization                                                         | Initialize logging and telemetry                |
-| `SessionEnd`         | No         | Yes            | Session termination                                                            | Clean up temporary resources                    |
-| `Notification`       | Yes        | Yes            | Agent status messages                                                          | Send agent status updates to Slack or PagerDuty |
-| `Setup`              | No         | Yes            | Session setup/maintenance                                                      | Run initialization tasks                        |
-| `TeammateIdle`       | No         | Yes            | Teammate becomes idle                                                          | Reassign work or notify                         |
-| `TaskCompleted`      | No         | Yes            | Background task completes                                                      | Aggregate results from parallel tasks           |
-| `ConfigChange`       | No         | Yes            | Configuration file changes                                                     | Reload settings dynamically                     |
-| `WorktreeCreate`     | No         | Yes            | Git worktree created                                                           | Track isolated workspaces                       |
-| `WorktreeRemove`     | No         | Yes            | Git worktree removed                                                           | Clean up workspace resources                    |
+| Hook Event           | Python SDK | TypeScript SDK | What triggers it                                                                      | Example use case                                                      |
+| -------------------- | ---------- | -------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `PreToolUse`         | Yes        | Yes            | Tool call request (can block or modify)                                               | Block dangerous shell commands                                        |
+| `PostToolUse`        | Yes        | Yes            | Tool execution result                                                                 | Log all file changes to audit trail                                   |
+| `PostToolUseFailure` | Yes        | Yes            | Tool execution failure                                                                | Handle or log tool errors                                             |
+| `PostToolBatch`      | No         | Yes            | A full batch of tool calls resolves, once per batch before the next model call        | Inject conventions once for the whole batch                           |
+| `UserPromptSubmit`   | Yes        | Yes            | User prompt submission                                                                | Inject additional context into prompts                                |
+| `MessageDisplay`     | No         | Yes            | An assistant message with text completes, once per message with the full message text | Redact or reformat the displayed text without changing the transcript |
+| `Stop`               | Yes        | Yes            | Agent execution stop                                                                  | Save session state before exit                                        |
+| `SubagentStart`      | Yes        | Yes            | Subagent initialization                                                               | Track parallel task spawning                                          |
+| `SubagentStop`       | Yes        | Yes            | Subagent completion                                                                   | Aggregate results from parallel tasks                                 |
+| `PreCompact`         | Yes        | Yes            | Conversation compaction request                                                       | Archive full transcript before summarizing                            |
+| `PermissionRequest`  | Yes        | Yes            | Permission dialog would be displayed                                                  | Custom permission handling                                            |
+| `SessionStart`       | No         | Yes            | Session initialization                                                                | Initialize logging and telemetry                                      |
+| `SessionEnd`         | No         | Yes            | Session termination                                                                   | Clean up temporary resources                                          |
+| `Notification`       | Yes        | Yes            | Agent status messages                                                                 | Send agent status updates to Slack or PagerDuty                       |
+| `Setup`              | No         | Yes            | Session setup/maintenance                                                             | Run initialization tasks                                              |
+| `TeammateIdle`       | No         | Yes            | Teammate becomes idle                                                                 | Reassign work or notify                                               |
+| `TaskCompleted`      | No         | Yes            | Background task completes                                                             | Aggregate results from parallel tasks                                 |
+| `ConfigChange`       | No         | Yes            | Configuration file changes                                                            | Reload settings dynamically                                           |
+| `WorktreeCreate`     | No         | Yes            | Git worktree created                                                                  | Track isolated workspaces                                             |
+| `WorktreeRemove`     | No         | Yes            | Git worktree removed                                                                  | Clean up workspace resources                                          |
 
 ## Configure hooks
 
@@ -203,13 +204,15 @@ The `hooks` option is a dictionary (Python) or object (TypeScript) where:
 
 ### Matchers
 
-Use matchers to filter when your callbacks fire. The `matcher` field is a regex string that matches against a different value depending on the hook event type. For example, tool-based hooks match against the tool name, while `Notification` hooks match against the notification type. See the [Claude Code hooks reference](/en/hooks#matcher-patterns) for the full list of matcher values for each event type.
+Use matchers to filter when your callbacks fire. The `matcher` field matches against a different value depending on the hook event type. For example, tool-based hooks match against the tool name, while `Notification` hooks match against the notification type. See the [Claude Code hooks reference](/en/hooks#matcher-patterns) for the full list of matcher values for each event type.
 
-| Option    | Type             | Default     | Description                                                                                                                                                                                                                                                                                                                                        |
-| --------- | ---------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `matcher` | `string`         | `undefined` | Regex pattern matched against the event's filter field. For tool hooks, this is the tool name. Built-in tools include `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebFetch`, `Agent`, and others (see [Tool Input Types](/en/agent-sdk/typescript#tool-input-types) for the full list). MCP tools use the pattern `mcp__<server>__<action>`. |
-| `hooks`   | `HookCallback[]` | -           | Required. Array of callback functions to execute when the pattern matches                                                                                                                                                                                                                                                                          |
-| `timeout` | `number`         | `60`        | Timeout in seconds                                                                                                                                                                                                                                                                                                                                 |
+SDK matchers follow the same rules as [matchers in settings files](/en/hooks#matcher-patterns): a matcher containing only letters, digits, `_`, and `|` is compared as an exact string, with `|` separating alternatives, so `Write|Edit` matches exactly those two tools. A matcher of `*`, an empty string, or omitting the matcher entirely matches every occurrence of the event; a matcher containing any other character is evaluated as a regular expression, so `^mcp__` matches every MCP tool. A matcher like `mcp__memory` contains only letters and underscores, so it is compared as an exact string and matches no tool; use `mcp__memory__.*` to match every tool from that server.
+
+| Option    | Type             | Default     | Description                                                                                                                                                                                                                                                                                                                                                                        |
+| --------- | ---------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `matcher` | `string`         | `undefined` | Pattern matched against the event's filter field, following the comparison rules above. For tool hooks, this is the tool name. Built-in tools include `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebFetch`, `Agent`, and others (see [Tool Input Types](/en/agent-sdk/typescript#tool-input-types) for the full list). MCP tools use the pattern `mcp__<server>__<action>`. |
+| `hooks`   | `HookCallback[]` | -           | Required. Array of callback functions to execute when the pattern matches                                                                                                                                                                                                                                                                                                          |
+| `timeout` | `number`         | `60`        | Timeout in seconds                                                                                                                                                                                                                                                                                                                                                                 |
 
 Use the `matcher` pattern to target specific tools whenever possible. A matcher with `'Bash'` only runs for Bash commands, while omitting the pattern runs your callbacks for every occurrence of the event. Note that for tool-based hooks, matchers only filter by **tool name**, not by file paths or other arguments. To filter by file path, check `tool_input.file_path` inside your callback.
 
@@ -235,8 +238,8 @@ Every hook callback receives three arguments:
 
 Your callback returns an object with two categories of fields:
 
-* **Top-level fields** control the conversation: `systemMessage` injects a message into the conversation visible to the model, and `continue` (`continue_` in Python) determines whether the agent keeps running after this hook.
-* **`hookSpecificOutput`** controls the current operation. The fields inside depend on the hook event type. For `PreToolUse` hooks, this is where you set `permissionDecision` (`"allow"`, `"deny"`, or `"ask"`), `permissionDecisionReason`, and `updatedInput`. In the TypeScript SDK, `permissionDecision` also accepts `"defer"` to end the query and [resume later](/en/hooks#defer-a-tool-call-for-later); this value is not available in the Python SDK. For `PostToolUse` hooks, you can set `additionalContext` to append information to the tool result, or `updatedToolOutput` to replace the tool's output entirely before Claude sees it.
+* **Top-level fields** work the same on every event: `systemMessage` shows a message to the user, and `continue` (`continue_` in Python) determines whether the agent keeps running after this hook.
+* **`hookSpecificOutput`** controls the current operation. The fields inside depend on the hook event type. For `PreToolUse` hooks, this is where you set `permissionDecision` (`"allow"`, `"deny"`, `"ask"`, or `"defer"`), `permissionDecisionReason`, and `updatedInput`. Returning `"defer"` ends the query so you can [resume it later](/en/hooks#defer-a-tool-call-for-later). For `PostToolUse` hooks, you can set `additionalContext` to append information to the tool result. To replace the tool's output before Claude sees it, set `updatedToolOutput`, which works for any tool in both SDKs. The older `updatedMCPToolOutput` field replaces MCP tool output only and is deprecated.
 
 Return `{}` to allow the operation without changes. SDK callback hooks use the same JSON output format as [Claude Code shell command hooks](/en/hooks#json-output), which documents every field and event-specific option. For the SDK type definitions, see the [TypeScript](/en/agent-sdk/typescript#synchookjsonoutput) and [Python](/en/agent-sdk/python#synchookjsonoutput) SDK references.
 
@@ -326,12 +329,16 @@ This example intercepts Write tool calls and rewrites the `file_path` argument t
 </CodeGroup>
 
 <Note>
-  When using `updatedInput`, you must also include `permissionDecision: 'allow'`. Always return a new object rather than mutating the original `tool_input`.
+  When using `updatedInput`, you must also include `permissionDecision: 'allow'` to auto-approve the modified input or `permissionDecision: 'ask'` to show it to the user. With `'defer'`, `updatedInput` is ignored. Always return a new object rather than mutating the original `tool_input`.
 </Note>
 
 ### Add context and block a tool
 
-This example blocks any attempt to write to the `/etc` directory and uses two output fields together: `permissionDecision: 'deny'` stops the tool call, while `systemMessage` injects a reminder into the conversation so the agent receives context about why the operation was blocked and avoids retrying it:
+This example blocks writes to the `/etc` directory and explains why to both the model and the user:
+
+* `permissionDecision: 'deny'` stops the tool call.
+* `permissionDecisionReason` tells the model why, so it avoids retrying.
+* `systemMessage` shows the user what happened.
 
 <CodeGroup>
   ```python Python theme={null}
@@ -340,7 +347,7 @@ This example blocks any attempt to write to the `/etc` directory and uses two ou
 
       if file_path.startswith("/etc"):
           return {
-              # Top-level field: inject guidance into the conversation
+              # Top-level field: message shown to the user
               "systemMessage": "Remember: system directories like /etc are protected.",
               # hookSpecificOutput: block the operation
               "hookSpecificOutput": {
@@ -360,7 +367,7 @@ This example blocks any attempt to write to the `/etc` directory and uses two ou
 
     if (filePath?.startsWith("/etc")) {
       return {
-        // Top-level field: inject guidance into the conversation
+        // Top-level field: message shown to the user
         systemMessage: "Remember: system directories like /etc are protected.",
         // hookSpecificOutput: block the operation
         hookSpecificOutput: {
@@ -449,9 +456,13 @@ The example below registers three independent checks for every tool call:
   ```
 </CodeGroup>
 
-### Filter with regex matchers
+### Filter with multi-tool matchers
 
-Use regex patterns to match multiple tools. This example registers three matchers with different scopes: the first triggers `file_security_hook` only for file modification tools, the second triggers `mcp_audit_hook` for any MCP tool (tools whose names start with `mcp__`), and the third triggers `global_logger` for every tool call regardless of name:
+Use multi-tool matchers to share one callback across related tools. This example registers three matchers with different scopes:
+
+* A pipe-separated exact list (`Write|Edit|Delete`) triggers `file_security_hook` only for file modification tools.
+* A regex (`^mcp__`) triggers `mcp_audit_hook` for any MCP tool whose name starts with `mcp__`.
+* An omitted matcher triggers `global_logger` for every tool call regardless of name.
 
 <CodeGroup>
   ```python Python theme={null}
@@ -621,7 +632,14 @@ This example sends a webhook after each tool completes, logging which tool ran a
 
 ### Forward notifications to Slack
 
-Use `Notification` hooks to receive system notifications from the agent and forward them to external services. Notifications fire for specific event types: `permission_prompt` (Claude needs permission), `idle_prompt` (Claude is waiting for input), `auth_success` (authentication completed), and `elicitation_dialog` (Claude is prompting the user). Each notification includes a `message` field with a human-readable description and optionally a `title`.
+Use `Notification` hooks to receive system notifications from the agent and forward them to external services. Notifications fire for event types such as:
+
+* `permission_prompt` when Claude needs permission
+* `idle_prompt` when Claude is waiting for input
+* `auth_success` when authentication completes
+* `elicitation_dialog`, `elicitation_complete`, and `elicitation_response` for user-prompt elicitation flows
+
+Each notification includes a `message` field with a human-readable description and optionally a `title`.
 
 This example forwards every notification to a Slack channel. It requires a [Slack incoming webhook URL](https://api.slack.com/messaging/webhooks), which you create by adding an app to your Slack workspace and enabling incoming webhooks:
 
@@ -769,7 +787,7 @@ const myHook: HookCallback = async (input, toolUseID, { signal }) => {
   };
   ```
 
-* You must also return `permissionDecision: 'allow'` for the input modification to take effect
+* Return `permissionDecision: 'allow'` to auto-approve the modified input, or `'ask'` to show it to the user for approval
 
 * Include `hookEventName` in `hookSpecificOutput` to identify which hook type the output is for
 
@@ -807,7 +825,9 @@ A `UserPromptSubmit` hook that spawns subagents can create infinite loops if tho
 
 ### systemMessage not appearing in output
 
-The `systemMessage` field adds context to the conversation that the model sees, but it may not appear in all SDK output modes. If you need to surface hook decisions to your application, log them separately or use a dedicated output channel.
+The `systemMessage` field shows a message to the user, not the model. By default the SDK does not surface hook output in the message stream, so the message may not appear unless you set `includeHookEvents` (`include_hook_events` in Python). To pass context to the model instead, return [`additionalContext`](/en/hooks#add-context-for-claude).
+
+If you need to surface hook decisions to your application reliably, log them separately or use a dedicated output channel.
 
 ## Related resources
 

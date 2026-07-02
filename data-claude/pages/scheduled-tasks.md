@@ -10,9 +10,9 @@
   Scheduled tasks require Claude Code v2.1.72 or later. Check your version with `claude --version`.
 </Note>
 
-Scheduled tasks let Claude re-run a prompt automatically on an interval. Use them to poll a deployment, babysit a PR, check back on a long-running build, or remind yourself to do something later in the session. To react to events as they happen instead of polling, see [Channels](/en/channels): your CI can push the failure into the session directly.
+Scheduled tasks let Claude re-run a prompt automatically on an interval. Use them to poll a deployment, babysit a PR, check back on a long-running build, or remind yourself to do something later in the session. To react to events as they happen instead of polling, see [Channels](/en/channels): your CI can push the failure into the session directly. To keep the session working turn after turn until a condition is met rather than on an interval, see [`/goal`](/en/goal).
 
-Tasks are session-scoped: they live in the current conversation and stop when you start a new one. Resuming with `--resume` or `--continue` brings back any task that hasn't [expired](#seven-day-expiry): a recurring task created within the last 7 days, or a one-shot whose scheduled time hasn't passed yet. For scheduling that survives independently of any session, use [Routines](/en/routines), [Desktop scheduled tasks](/en/desktop-scheduled-tasks), or [GitHub Actions](/en/github-actions).
+Tasks are session-scoped: they live in the current conversation and stop when you start a new one. Resuming with `--resume` or `--continue` brings back any task that hasn't [expired](#seven-day-expiry): a recurring task created within the last 7 days, or a one-shot whose scheduled time hasn't passed yet. For scheduling that survives independently of any session, use [Routines](/en/routines) to create a routine on Anthropic-managed infrastructure, set up a [Desktop scheduled task](/en/desktop-scheduled-tasks), or use [GitHub Actions](/en/github-actions).
 
 ## Compare scheduling options
 
@@ -44,7 +44,7 @@ The `/loop` [bundled skill](/en/commands) is the quickest way to run a prompt on
 | Prompt only               | `/loop check the deploy`    | Your prompt runs at an [interval Claude chooses](#let-claude-choose-the-interval) each iteration              |
 | Interval only, or nothing | `/loop`                     | The [built-in maintenance prompt](#run-the-built-in-maintenance-prompt) runs, or your `loop.md` if one exists |
 
-You can also pass another command as the prompt, for example `/loop 20m /review-pr 1234`, to re-run a packaged workflow each iteration.
+You can also pass another command as the prompt, for example `/loop 20m /review-pr 1234`, to re-run a saved skill or command each iteration.
 
 ### Run on a fixed interval
 
@@ -93,7 +93,7 @@ Claude does not start new initiatives outside that scope, and irreversible actio
 A bare `/loop` runs this prompt at a [dynamically chosen interval](#let-claude-choose-the-interval). Add an interval, for example `/loop 15m`, to run it on a fixed schedule instead. To replace the built-in prompt with your own default, see [Customize the default prompt with loop.md](#customize-the-default-prompt-with-loop-md).
 
 <Note>
-  On Bedrock, Vertex AI, and Microsoft Foundry, `/loop` with no prompt prints the usage message instead of starting the maintenance loop.
+  On Bedrock, Vertex AI, and Microsoft Foundry, `/loop` with no prompt prints the usage message instead of running the maintenance prompt.
 </Note>
 
 ### Customize the default prompt with loop.md
@@ -118,9 +118,15 @@ quiet, say so in one line.
 
 Edits to `loop.md` take effect on the next iteration, so you can refine the instructions while a loop is running. When no `loop.md` exists in either location, the loop falls back to the built-in maintenance prompt. Keep the file concise: content beyond 25,000 bytes is truncated.
 
+<Note>
+  On Bedrock, Vertex AI, and Microsoft Foundry, `loop.md` isn't read and `/loop` with no prompt prints the usage message instead.
+</Note>
+
 ### Stop a loop
 
 To stop a `/loop` while it is waiting for the next iteration, press `Esc`. This clears the pending wakeup so the loop does not fire again. Tasks you scheduled by [asking Claude directly](#manage-scheduled-tasks) are not affected by `Esc` and stay in place until you delete them.
+
+In [self-paced mode](#let-claude-choose-the-interval), Claude can also end the loop on its own by not scheduling the next wakeup once the task is provably complete. Loops on a fixed interval keep running until you stop them or [seven days elapse](#seven-day-expiry).
 
 ## Set a one-time reminder
 

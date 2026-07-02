@@ -81,16 +81,16 @@ You can also install with [apt, dnf, or apk](/en/setup#install-with-linux-packag
 
 ## Step 2: Log in to your account
 
-Claude Code requires an account to use. When you start an interactive session with the `claude` command, you'll need to log in:
+Claude Code requires an account to use. Start an interactive session with the `claude` command and you'll be prompted to log in on first use:
 
 ```bash theme={null}
 claude
-# You'll be prompted to log in on first use
 ```
 
-```bash theme={null}
+For Claude subscription or Console accounts, follow the prompts to complete authentication in your browser. To switch accounts later or re-authenticate, type `/login` inside the running session:
+
+```text theme={null}
 /login
-# Follow the prompts to log in with your account
 ```
 
 You can log in using any of these account types:
@@ -99,7 +99,7 @@ You can log in using any of these account types:
 * [Claude Console](https://console.anthropic.com/) (API access with pre-paid credits). On first login, a "Claude Code" workspace is automatically created in the Console for centralized cost tracking.
 * [Amazon Bedrock, Google Vertex AI, or Microsoft Foundry](/en/third-party-integrations) (enterprise cloud providers)
 
-Once logged in, your credentials are stored and you won't need to log in again. To switch accounts later, use the `/login` command.
+Once logged in, your credentials are stored and you won't need to log in again.
 
 ## Step 3: Start your first session
 
@@ -110,7 +110,7 @@ cd /path/to/your/project
 claude
 ```
 
-You'll see the Claude Code welcome screen with your session information, recent conversations, and latest updates. Type `/help` for available commands or `/resume` to continue a previous conversation.
+You'll see the Claude Code prompt with the version, current model, and working directory shown above it. Type `/help` for available commands or `/resume` to continue a previous conversation.
 
 <Tip>
   After logging in (Step 2), your credentials are stored on your system. Learn more in [Credential Management](/en/authentication#credential-management).
@@ -258,7 +258,9 @@ review my changes and suggest improvements
 
 ## Essential commands
 
-Here are the most important commands for daily use:
+Here are the most important commands for daily use. Shell commands run from your terminal to start or resume Claude Code. Session commands run inside Claude Code after it starts.
+
+**Shell commands**
 
 | Command             | What it does                                           | Example                             |
 | ------------------- | ------------------------------------------------------ | ----------------------------------- |
@@ -267,11 +269,16 @@ Here are the most important commands for daily use:
 | `claude -p "query"` | Run one-off query, then exit                           | `claude -p "explain this function"` |
 | `claude -c`         | Continue most recent conversation in current directory | `claude -c`                         |
 | `claude -r`         | Resume a previous conversation                         | `claude -r`                         |
-| `/clear`            | Clear conversation history                             | `/clear`                            |
-| `/help`             | Show available commands                                | `/help`                             |
-| `exit` or Ctrl+D    | Exit Claude Code                                       | `exit`                              |
 
-See the [CLI reference](/en/cli-reference) for a complete list of commands.
+**Session commands**
+
+| Command           | What it does               | Example  |
+| ----------------- | -------------------------- | -------- |
+| `/clear`          | Clear conversation history | `/clear` |
+| `/help`           | Show available commands    | `/help`  |
+| `/exit` or Ctrl+D | Exit Claude Code           | `/exit`  |
+
+See the [CLI reference](/en/cli-reference) for the complete list of shell commands and the [commands reference](/en/commands) for the complete list of session commands.
 
 ## Pro tips for beginners
 
@@ -307,10 +314,10 @@ For more, see [best practices](/en/best-practices) and [common workflows](/en/co
   </Accordion>
 
   <Accordion title="Save time with shortcuts">
-    * Press `?` to see all available keyboard shortcuts
+    * Type `/` to see all commands and skills
     * Use Tab for command completion
     * Press ↑ for command history
-    * Type `/` to see all commands and skills
+    * Press `Shift+Tab` to cycle permission modes
   </Accordion>
 </AccordionGroup>
 

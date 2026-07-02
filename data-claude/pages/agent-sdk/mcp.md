@@ -16,7 +16,7 @@ MCP servers can run as local processes, connect over HTTP, or execute directly w
 
 ## Quickstart
 
-This example connects to the [Claude Code documentation](https://code.claude.com/docs) MCP server using [HTTP transport](#httpsse-servers) and uses [`allowedTools`](#allow-mcp-tools) with a wildcard to permit all tools from the server.
+This example connects to the [Claude Code documentation](https://code.claude.com/docs) MCP server using [HTTP transport](#http%2Fsse-servers) and uses [`allowedTools`](#allow-mcp-tools) with a wildcard to permit all tools from the server.
 
 <CodeGroup>
   ```typescript TypeScript theme={null}
@@ -152,9 +152,9 @@ MCP tools require explicit permission before Claude can use them. Without permis
 
 MCP tools follow the naming pattern `mcp__<server-name>__<tool-name>`. For example, a GitHub server named `"github"` with a `list_issues` tool becomes `mcp__github__list_issues`.
 
-### Grant access with allowedTools
+### Auto-approve with allowedTools
 
-Use `allowedTools` to specify which MCP tools Claude can use:
+Use `allowedTools` to auto-approve specific MCP tools so Claude can use them without a permission prompt:
 
 ```typescript hidelines={1,-1} theme={null}
 const _ = {
@@ -174,7 +174,7 @@ const _ = {
 Wildcards (`*`) let you allow all tools from a server without listing each one individually.
 
 <Note>
-  **Prefer `allowedTools` over permission modes for MCP access.** `permissionMode: "acceptEdits"` does not auto-approve MCP tools (only file edits and filesystem Bash commands). `permissionMode: "bypassPermissions"` does auto-approve MCP tools but also disables all other safety prompts, which is broader than necessary. A wildcard in `allowedTools` grants exactly the MCP server you want and nothing more. See [Permission modes](/en/agent-sdk/permissions#permission-modes) for a full comparison.
+  **Prefer `allowedTools` over permission modes for MCP access.** `permissionMode: "acceptEdits"` does not auto-approve MCP tools (only file edits and filesystem Bash commands). `permissionMode: "bypassPermissions"` does auto-approve MCP tools but also disables other safety prompts unless an explicit [`ask` rule](/en/agent-sdk/permissions#how-permissions-are-evaluated) matches, which is broader than necessary. A wildcard in `allowedTools` grants exactly the MCP server you want and nothing more. See [Permission modes](/en/agent-sdk/permissions#permission-modes) for a full comparison.
 </Note>
 
 ### Discover available tools
@@ -750,7 +750,7 @@ const _ = {
     mcpServers: {
       // your servers
     },
-    allowedTools: ["mcp__servername__*"] // Required for Claude to use the tools
+    allowedTools: ["mcp__servername__*"] // Auto-approve calls from this server
   }
 };
 ```

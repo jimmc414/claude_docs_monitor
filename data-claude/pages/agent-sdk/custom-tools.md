@@ -32,7 +32,7 @@ A tool is defined by four parts, passed as arguments to the [`tool()`](/en/agent
 * **Description:** what the tool does. Claude reads this to decide when to call it.
 * **Input schema:** the arguments Claude must provide. In TypeScript this is always a [Zod schema](https://zod.dev/), and the handler's `args` are typed from it automatically. In Python this is a dict mapping names to types, like `{"latitude": float}`, which the SDK converts to JSON Schema for you. The Python decorator also accepts a full [JSON Schema](https://json-schema.org/understanding-json-schema/about) dict directly when you need enums, ranges, optional fields, or nested objects.
 * **Handler:** the async function that runs when Claude calls the tool. It receives the validated arguments and must return an object with:
-  * `content` (required): an array of result blocks, each with a `type` of `"text"`, `"image"`, or `"resource"`. See [Return images and resources](#return-images-and-resources) for non-text blocks.
+  * `content` (required): an array of result blocks, each with a `type` of `"text"`, `"image"`, `"audio"`, `"resource"`, or `"resource_link"`. See [Return images and resources](#return-images-and-resources) for non-text blocks.
   * `structuredContent` (optional): a JSON object holding the result as machine-readable data, returned alongside `content`. See [Return structured data](#return-structured-data).
   * `isError` (optional): set to `true` to signal a tool failure so Claude can react to it. See [Handle errors](#handle-errors).
 
@@ -323,16 +323,16 @@ When MCP tools are exposed to Claude, their names follow a specific format:
 
 ### Configure allowed tools
 
-The `tools` option and the allowed/disallowed lists operate on separate layers. `tools` controls which built-in tools appear in Claude's context. Allowed and disallowed tool lists control whether calls are approved or denied once Claude attempts them.
+The `tools` option and the allowed/disallowed lists affect two layers: availability, which controls whether a tool appears in Claude's context, and permission, which controls whether a call is approved once Claude attempts it. `tools` and bare-name `disallowedTools` entries change availability. `allowedTools` and scoped `disallowedTools` rules change permission only.
 
-| Option                    | Layer        | Effect                                                                                                                                            |
-| :------------------------ | :----------- | :------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `tools: ["Read", "Grep"]` | Availability | Only the listed built-ins are in Claude's context. Unlisted built-ins are removed. MCP tools are unaffected.                                      |
-| `tools: []`               | Availability | All built-ins are removed. Claude can only use your MCP tools.                                                                                    |
-| allowed tools             | Permission   | Listed tools run without a permission prompt. Unlisted tools remain available; calls go through the [permission flow](/en/agent-sdk/permissions). |
-| disallowed tools          | Permission   | Every call to a listed tool is denied. The tool stays in Claude's context, so Claude may still attempt it before the call is rejected.            |
+| Option                    | Layer        | Effect                                                                                                                                                                                                          |
+| :------------------------ | :----------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools: ["Read", "Grep"]` | Availability | Only the listed built-ins are in Claude's context. Unlisted built-ins are removed. MCP tools are unaffected.                                                                                                    |
+| `tools: []`               | Availability | All built-ins are removed. Claude can only use your MCP tools.                                                                                                                                                  |
+| allowed tools             | Permission   | Listed tools run without a permission prompt. Unlisted tools remain available; calls go through the [permission flow](/en/agent-sdk/permissions).                                                               |
+| disallowed tools          | Both         | A bare tool name such as `"Bash"` removes the tool from Claude's context, the same as omitting it from `tools`. A scoped rule such as `"Bash(rm *)"` leaves the tool in context and denies only matching calls. |
 
-To limit which built-ins Claude can use, prefer `tools` over disallowed tools. Omitting a tool from `tools` removes it from context so Claude never attempts it; listing it in `disallowedTools` (Python: `disallowed_tools`) blocks the call but leaves the tool visible, so Claude may waste a turn trying it. See [Configure permissions](/en/agent-sdk/permissions) for the full evaluation order.
+To remove a built-in entirely, omit it from `tools` or list its bare name in `disallowedTools` (Python: `disallowed_tools`); both keep the tool out of context so Claude never attempts it. A scoped `disallowedTools` rule blocks matching calls but leaves the tool visible, so Claude may waste a turn trying it. See [Configure permissions](/en/agent-sdk/permissions) for the full evaluation order.
 
 ## Handle errors
 
@@ -439,7 +439,7 @@ The example below catches two kinds of failures inside the handler instead of le
 
 ## Return images and resources
 
-The `content` array in a tool result accepts `text`, `image`, and `resource` blocks. You can mix them in the same response.
+The `content` array in a tool result accepts `text`, `image`, `audio`, `resource`, and `resource_link` blocks. You can mix them in the same response. Audio blocks are saved to disk and Claude receives a text block with the saved file path. Resource link blocks are converted to a text block containing the link's name, URI, and description.
 
 ### Images
 

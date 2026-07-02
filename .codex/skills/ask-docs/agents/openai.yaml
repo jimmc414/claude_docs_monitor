@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ask Docs"
+  short_description: "Answer questions from cached Codex docs"
+  default_prompt: "Use $ask-docs to answer a question from the cached Codex docs with file citations."

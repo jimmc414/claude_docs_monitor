@@ -12,7 +12,7 @@ Claude requests user input in two situations: when it needs **permission to use 
 
 For clarifying questions, Claude generates the questions and options. Your role is to present them to users and return their selections. You can't add your own questions to this flow; if you need to ask users something yourself, do that separately in your application logic.
 
-The callback can stay pending indefinitely. Execution remains paused until your callback returns, and the SDK only cancels the wait when the query itself is cancelled. If a user might take longer to respond than your process can reasonably stay running, the TypeScript SDK supports the [`defer` hook decision](/en/hooks#defer-a-tool-call-for-later), which lets the process exit and resume later from the persisted session; this option is not available in the Python SDK.
+The callback can stay pending indefinitely. Execution remains paused until your callback returns, and the SDK only cancels the wait when the query itself is cancelled. If a user might take longer to respond than your process can reasonably stay running, return the [`defer` hook decision](/en/hooks#defer-a-tool-call-for-later), which lets the process exit and resume later from the persisted session.
 
 This guide shows you how to detect each type of request and respond appropriately.
 
@@ -232,6 +232,7 @@ Beyond allowing or denying, you can modify the tool's input or provide context t
 
 * **Approve**: let the tool execute as Claude requested
 * **Approve with changes**: modify the input before execution (e.g., sanitize paths, add constraints)
+* **Approve and remember**: echo a suggested permission rule back so matching calls skip the prompt next time
 * **Reject**: block the tool and tell Claude why
 * **Suggest alternative**: block but guide Claude toward what the user wants instead
 * **Redirect entirely**: use [streaming input](/en/agent-sdk/streaming-vs-single-mode) to send Claude a completely new instruction
@@ -292,6 +293,51 @@ Beyond allowing or denying, you can modify the tool's input or provide context t
           return { behavior: "allow", updatedInput: sandboxedInput };
         }
         return { behavior: "allow", updatedInput: input };
+      };
+      ```
+    </CodeGroup>
+  </Tab>
+
+  <Tab title="Approve and remember">
+    The user approves and doesn't want to be asked again for this kind of call. The third callback argument carries `suggestions`, an array of ready-made [`PermissionUpdate`](/en/agent-sdk/typescript#permissionupdate) entries. Echo one back in `updatedPermissions` to apply it. A suggestion with the `localSettings` destination writes the rule to `.claude/settings.local.json` so future sessions skip the prompt for matching calls.
+
+    The Python example requires `claude-agent-sdk` 0.1.80 or later.
+
+    <CodeGroup>
+      ```python Python theme={null}
+      async def can_use_tool(tool_name, input_data, context):
+          choice = await ask_user(f"Allow {tool_name}?", ["once", "always", "no"])
+
+          if choice == "always":
+              persist = [
+                  s for s in context.suggestions if s.destination == "localSettings"
+              ]
+              return PermissionResultAllow(
+                  updated_input=input_data, updated_permissions=persist
+              )
+          if choice == "once":
+              return PermissionResultAllow(updated_input=input_data)
+          return PermissionResultDeny(message="User declined")
+      ```
+
+      ```typescript TypeScript theme={null}
+      canUseTool: async (toolName, input, { suggestions = [] }) => {
+        const choice = await askUser(`Allow ${toolName}?`, ["once", "always", "no"]);
+
+        if (choice === "always") {
+          const persist = suggestions.filter(
+            (s) => s.destination === "localSettings"
+          );
+          return {
+            behavior: "allow",
+            updatedInput: input,
+            updatedPermissions: persist
+          };
+        }
+        if (choice === "once") {
+          return { behavior: "allow", updatedInput: input };
+        }
+        return { behavior: "deny", message: "User declined" };
       };
       ```
     </CodeGroup>
@@ -509,12 +555,12 @@ The following steps show how to handle clarifying questions:
 
 The input contains Claude's generated questions in a `questions` array. Each question has these fields:
 
-| Field         | Description                                                                                                                             |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `question`    | The full question text to display                                                                                                       |
-| `header`      | Short label for the question (max 12 characters)                                                                                        |
-| `options`     | Array of 2-4 choices, each with `label` and `description`. TypeScript: optionally `preview` (see [below](#option-previews-type-script)) |
-| `multiSelect` | If `true`, users can select multiple options                                                                                            |
+| Field         | Description                                                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `question`    | The full question text to display                                                                                                      |
+| `header`      | Short label for the question (max 12 characters)                                                                                       |
+| `options`     | Array of 2-4 choices, each with `label` and `description`. TypeScript: optionally `preview` (see [below](#option-previews-typescript)) |
+| `multiSelect` | If `true`, users can select multiple options                                                                                           |
 
 The structure your callback receives:
 
@@ -579,12 +625,13 @@ An option with an HTML preview:
 
 Return an `answers` object mapping each question's `question` field to the selected option's `label`:
 
-| Field       | Description                                                              |
-| ----------- | ------------------------------------------------------------------------ |
-| `questions` | Pass through the original questions array (required for tool processing) |
-| `answers`   | Object where keys are question text and values are selected labels       |
+| Field       | Description                                                                          |
+| ----------- | ------------------------------------------------------------------------------------ |
+| `questions` | Pass through the original questions array (required for tool processing)             |
+| `answers`   | Object where keys are question text and values are selected labels                   |
+| `response`  | Optional freeform reply the user typed instead of answering the structured questions |
 
-For multi-select questions, pass an array of labels or join them with `", "`. For free-text input, use the user's custom text directly.
+For multi-select questions, pass an array of labels or join them with `", "`. For per-question free text such as an "Other" option, put the user's text in `answers[question]` as shown in [Support free-text input](#support-free-text-input). Set `response` only when your UI lets the user dismiss the question card and type a general reply that isn't an answer to any specific question. When `response` is set, Claude receives "The user responded: …" instead of the per-question answer list.
 
 ```json theme={null}
 {

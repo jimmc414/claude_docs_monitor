@@ -83,8 +83,9 @@ def _is_sdk_opaque_failure(err_text: str) -> bool:
 # ~/.claude/rules/agent-sdk-max-oauth.md and may need refreshing when
 # Anthropic releases new models.
 _MODEL_ALIASES_API = {
+    "fable":  "claude-fable-5",
     "sonnet": "claude-sonnet-4-6",
-    "opus":   "claude-opus-4-7",
+    "opus":   "claude-opus-4-8",
     "haiku":  "claude-haiku-4-5-20251001",
 }
 

@@ -154,14 +154,14 @@ Each plugin entry needs at minimum a `name` and `source` (where to fetch it from
 
 ### Required fields
 
-| Field     | Type   | Description                                                                                                                                                            | Example        |
-| :-------- | :----- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------- |
-| `name`    | string | Marketplace identifier (kebab-case, no spaces). This is public-facing: users see it when installing plugins (for example, `/plugin install my-tool@your-marketplace`). | `"acme-tools"` |
-| `owner`   | object | Marketplace maintainer information ([see fields below](#owner-fields))                                                                                                 |                |
-| `plugins` | array  | List of available plugins                                                                                                                                              | See below      |
+| Field     | Type   | Description                                                                                                                                                                                                                                                                                                                                                                                                                           | Example        |
+| :-------- | :----- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------------- |
+| `name`    | string | Marketplace identifier (kebab-case, no spaces). This is public-facing: users see it when installing plugins (for example, `/plugin install my-tool@your-marketplace`). Each user can register only one marketplace per name: adding a second marketplace with the same name replaces the first. To publish multiple plugins under one marketplace name, list them all in a [single `marketplace.json`](#create-the-marketplace-file). | `"acme-tools"` |
+| `owner`   | object | Marketplace maintainer information ([see fields below](#owner-fields))                                                                                                                                                                                                                                                                                                                                                                |                |
+| `plugins` | array  | List of available plugins                                                                                                                                                                                                                                                                                                                                                                                                             | See below      |
 
 <Note>
-  **Reserved names**: The following marketplace names are reserved for official Anthropic use and cannot be used by third-party marketplaces: `claude-code-marketplace`, `claude-code-plugins`, `claude-plugins-official`, `anthropic-marketplace`, `anthropic-plugins`, `agent-skills`, `knowledge-work-plugins`, `life-sciences`. Names that impersonate official marketplaces (like `official-claude-plugins` or `anthropic-tools-v2`) are also blocked.
+  **Reserved names**: The following marketplace names are reserved for official Anthropic use and cannot be used by third-party marketplaces: `claude-code-marketplace`, `claude-code-plugins`, `claude-plugins-official`, `claude-plugins-community`, `claude-community`, `anthropic-marketplace`, `anthropic-plugins`, `agent-skills`, `anthropic-agent-skills`, `knowledge-work-plugins`, `life-sciences`, `claude-for-legal`, `claude-for-financial-services`, `financial-services-plugins`. Names that impersonate official marketplaces, such as `official-claude-plugins` or `anthropic-tools-v2`, are also blocked.
 </Note>
 
 ### Owner fields
@@ -198,18 +198,20 @@ Each plugin entry in the `plugins` array describes a plugin and where to find it
 
 **Standard metadata fields:**
 
-| Field         | Type    | Description                                                                                                                                                                                                                                         |
-| :------------ | :------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `description` | string  | Brief plugin description                                                                                                                                                                                                                            |
-| `version`     | string  | Plugin version. If set (here or in `plugin.json`), the plugin is pinned to this string and users only receive updates when it changes. Omit to fall back to the git commit SHA. See [Version resolution](#version-resolution-and-release-channels). |
-| `author`      | object  | Plugin author information (`name` required, `email` optional)                                                                                                                                                                                       |
-| `homepage`    | string  | Plugin homepage or documentation URL                                                                                                                                                                                                                |
-| `repository`  | string  | Source code repository URL                                                                                                                                                                                                                          |
-| `license`     | string  | SPDX license identifier (for example, MIT, Apache-2.0)                                                                                                                                                                                              |
-| `keywords`    | array   | Tags for plugin discovery and categorization                                                                                                                                                                                                        |
-| `category`    | string  | Plugin category for organization                                                                                                                                                                                                                    |
-| `tags`        | array   | Tags for searchability                                                                                                                                                                                                                              |
-| `strict`      | boolean | Controls whether `plugin.json` is the authority for component definitions (default: true). See [Strict mode](#strict-mode) below.                                                                                                                   |
+| Field            | Type    | Description                                                                                                                                                                                                                                                                                                                                    |
+| :--------------- | :------ | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `displayName`    | string  | {/* min-version: 2.1.143 */}Human-readable name shown in UI surfaces. Falls back to `name` when omitted. May contain spaces and any casing. Not used for namespacing or lookup. Requires Claude Code v2.1.143 or later.                                                                                                                        |
+| `description`    | string  | Brief plugin description                                                                                                                                                                                                                                                                                                                       |
+| `version`        | string  | Plugin version. If set (here or in `plugin.json`), the plugin is pinned to this string and users only receive updates when it changes. Omit to fall back to the git commit SHA. See [Version resolution](#version-resolution-and-release-channels).                                                                                            |
+| `author`         | object  | Plugin author information (`name` required, `email` optional)                                                                                                                                                                                                                                                                                  |
+| `homepage`       | string  | Plugin homepage or documentation URL                                                                                                                                                                                                                                                                                                           |
+| `repository`     | string  | Source code repository URL                                                                                                                                                                                                                                                                                                                     |
+| `license`        | string  | SPDX license identifier (for example, MIT, Apache-2.0)                                                                                                                                                                                                                                                                                         |
+| `keywords`       | array   | Tags for plugin discovery and categorization                                                                                                                                                                                                                                                                                                   |
+| `category`       | string  | Plugin category for organization                                                                                                                                                                                                                                                                                                               |
+| `tags`           | array   | Tags for searchability                                                                                                                                                                                                                                                                                                                         |
+| `strict`         | boolean | Controls whether `plugin.json` is the authority for component definitions (default: true). See [Strict mode](#strict-mode) below.                                                                                                                                                                                                              |
+| `defaultEnabled` | boolean | {/* min-version: 2.1.154 */}Whether the plugin is enabled after install (default: true). Set to `false` to install the plugin disabled until the user opts in. Takes precedence over the same field in the plugin's `plugin.json`. See [Default enablement](/en/plugins-reference#default-enablement). Requires Claude Code v2.1.154 or later. |
 
 **Component configuration fields:**
 
@@ -244,6 +246,8 @@ Once a plugin is cloned or copied into the local machine, it is copied into the 
 
   For example, a marketplace hosted at `acme-corp/plugin-catalog` (marketplace source) can list a plugin fetched from `acme-corp/code-formatter` (plugin source). The marketplace source and plugin source point to different repositories and are pinned independently.
 </Note>
+
+The git-based source types below are `github`, `url`, and `git-subdir`. When both `ref` and `sha` are set on any of them, the `sha` is the effective pin. Claude Code fetches and checks out the pinned commit directly, so installation succeeds even if the branch or tag named by `ref` has since been deleted upstream, as long as the commit is still reachable from the repository.
 
 ### Relative paths
 
@@ -468,6 +472,21 @@ Key things to notice:
 * **`commands` and `agents`**: You can specify multiple directories or individual files. Paths are relative to the plugin root.
 * **`${CLAUDE_PLUGIN_ROOT}`**: use this variable in hooks and MCP server configs to reference files within the plugin's installation directory. This is necessary because plugins are copied to a cache location when installed. For dependencies or state that should survive plugin updates, use [`${CLAUDE_PLUGIN_DATA}`](/en/plugins-reference#persistent-data-directory) instead.
 * **`strict: false`**: Since this is set to false, the plugin doesn't need its own `plugin.json`. The marketplace entry defines everything. See [Strict mode](#strict-mode) below.
+
+By default, a plugin's skills load from the `skills/` directory under its `source`. Paths listed in the `skills` field add to that scan:
+
+```json theme={null}
+"skills": ["./skills/", "./extra-skills/"]
+```
+
+When several plugin entries share one `skills/` folder at the marketplace root (`source: "./"`), list specific subdirectories instead so each entry loads only its own skills:
+
+```json theme={null}
+"source": "./",
+"skills": ["./skills/code-review", "./skills/docs"]
+```
+
+With a marketplace-root `source`, the listed paths are the complete set for that entry, and other directories in the shared `skills/` folder do not load. Listing `./skills/` itself, or the plugin root, keeps the full scan. If none of the listed paths exist, the default scan runs instead.
 
 ### Strict mode
 
@@ -904,20 +923,28 @@ claude plugin marketplace list [options]
 | :------- | :------------- |
 | `--json` | Output as JSON |
 
+With `--json`, each entry includes `name`, `source`, and source-specific fields: `repo` for GitHub sources, `url` for git and URL sources, and `path` for local sources. GitHub and git sources also include a `ref` field when the marketplace was added with a pinned branch or tag.
+
 ### Plugin marketplace remove
 
 Remove a configured marketplace. The alias `rm` is also accepted.
 
 ```bash theme={null}
-claude plugin marketplace remove <name>
+claude plugin marketplace remove <name> [options]
 ```
 
 **Arguments:**
 
 * `<name>`: marketplace name to remove, as shown by `claude plugin marketplace list`. This is the `name` from `marketplace.json`, not the source you passed to `add`
 
+**Options:**
+
+| Option            | Description                                                                                                                                                                                                                                                                                                                                                                                                        | Default      |
+| :---------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------- |
+| `--scope <scope>` | Restrict removal to a single settings scope: `user`, `project`, or `local`. See [Plugin installation scopes](/en/plugins-reference#plugin-installation-scopes). When omitted, the declaration is removed from every editable scope. When given, only that scope's declaration is removed; the shared state, cache, and installed plugin data are preserved when the marketplace is still declared in another scope | (all scopes) |
+
 <Warning>
-  Removing a marketplace also uninstalls any plugins you installed from it. To refresh a marketplace without losing installed plugins, use `claude plugin marketplace update` instead.
+  Removing a marketplace from its last remaining scope also uninstalls any plugins you installed from it. To refresh a marketplace without losing installed plugins, use `claude plugin marketplace update` instead.
 </Warning>
 
 ### Plugin marketplace update
@@ -944,21 +971,23 @@ Both `remove` and `update` fail when run against a seed-managed marketplace, whi
 
 * Verify the marketplace URL is accessible
 * Check that `.claude-plugin/marketplace.json` exists at the specified path
-* Ensure JSON syntax is valid and frontmatter is well-formed using `claude plugin validate` or `/plugin validate`
+* Ensure JSON syntax is valid using `claude plugin validate` or `/plugin validate`. To check skill, agent, and command frontmatter, run the command against each plugin directory
 * For private repositories, confirm you have access permissions
 
 ### Marketplace validation errors
 
-Run `claude plugin validate .` or `/plugin validate .` from your marketplace directory to check for issues. The validator checks `plugin.json`, skill/agent/command frontmatter, and `hooks/hooks.json` for syntax and schema errors. Common errors:
+Run `claude plugin validate .` or `/plugin validate .` from your marketplace directory to check for issues. When pointed at a marketplace directory, the validator checks `marketplace.json` only: schema, duplicate plugin names, source path traversal, and version mismatches against each referenced `plugin.json`.
 
-| Error                                             | Cause                                           | Solution                                                                                       |
-| :------------------------------------------------ | :---------------------------------------------- | :--------------------------------------------------------------------------------------------- |
-| `File not found: .claude-plugin/marketplace.json` | Missing manifest                                | Create `.claude-plugin/marketplace.json` with required fields                                  |
-| `Invalid JSON syntax: Unexpected token...`        | JSON syntax error in marketplace.json           | Check for missing commas, extra commas, or unquoted strings                                    |
-| `Duplicate plugin name "x" found in marketplace`  | Two plugins share the same name                 | Give each plugin a unique `name` value                                                         |
-| `plugins[0].source: Path contains ".."`           | Source path contains `..`                       | Use paths relative to the marketplace root without `..`. See [Relative paths](#relative-paths) |
-| `YAML frontmatter failed to parse: ...`           | Invalid YAML in a skill, agent, or command file | Fix the YAML syntax in the frontmatter block. At runtime this file loads with no metadata.     |
-| `Invalid JSON syntax: ...` (hooks.json)           | Malformed `hooks/hooks.json`                    | Fix JSON syntax. A malformed `hooks/hooks.json` prevents the entire plugin from loading.       |
+To validate an individual plugin's `plugin.json` and its skill, agent, command, and hook files, run the command against the plugin directory itself, for example `claude plugin validate ./plugins/my-plugin`. Common errors:
+
+| Error                                             | Cause                                           | Solution                                                                                                                                    |
+| :------------------------------------------------ | :---------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| `File not found: .claude-plugin/marketplace.json` | Missing manifest                                | Create `.claude-plugin/marketplace.json` with required fields                                                                               |
+| `Invalid JSON syntax: Unexpected token...`        | JSON syntax error in marketplace.json           | Check for missing commas, extra commas, or unquoted strings                                                                                 |
+| `Duplicate plugin name "x" found in marketplace`  | Two plugins share the same name                 | Give each plugin a unique `name` value                                                                                                      |
+| `plugins[0].source: Path contains ".."`           | Source path contains `..`                       | Use paths relative to the marketplace root without `..`. See [Relative paths](#relative-paths)                                              |
+| `YAML frontmatter failed to parse: ...`           | Invalid YAML in a skill, agent, or command file | Fix the YAML syntax in the frontmatter block. At runtime this file loads with no metadata. Reported only when validating a plugin directory |
+| `Invalid JSON syntax: ...` (hooks.json)           | Malformed `hooks/hooks.json`                    | Fix JSON syntax. A malformed `hooks/hooks.json` prevents the entire plugin from loading. Reported only when validating a plugin directory   |
 
 **Warnings** (non-blocking):
 
@@ -976,6 +1005,7 @@ Run `claude plugin validate .` or `/plugin validate .` from your marketplace dir
 * Check that plugin directories contain required files
 * For GitHub sources, ensure repositories are public or you have access
 * Test plugin sources manually by cloning/downloading
+* If the source pins both `ref` and `sha`, a deleted upstream branch or tag does not block installation. If the install still fails, confirm the pinned commit still exists in the repository
 
 ### Private repository authentication fails
 

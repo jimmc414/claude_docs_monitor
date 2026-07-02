@@ -2,7 +2,7 @@
 > Fetch the complete documentation index at: https://code.claude.com/docs/llms.txt
 > Use this file to discover all available pages before exploring further.
 
-# Claude Code overview
+# Overview
 
 > Claude Code is an agentic coding tool that reads your codebase, edits files, runs commands, and integrates with your development tools. Available in your terminal, IDE, desktop app, and browser.
 
@@ -122,7 +122,7 @@ Choose your environment to get started. Most surfaces require a [Claude subscrip
   <Tab title="JetBrains">
     A plugin for IntelliJ IDEA, PyCharm, WebStorm, and other JetBrains IDEs with interactive diff viewing and selection context sharing.
 
-    Install the [Claude Code plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) from the JetBrains Marketplace and restart your IDE.
+    Install the [Claude Code plugin](https://plugins.jetbrains.com/plugin/27310-claude-code-beta-) from the JetBrains Marketplace and restart your IDE. The plugin requires the Claude Code CLI, installed separately; see the [JetBrains setup steps](/en/jetbrains#installation).
 
     [Get started with JetBrains →](/en/jetbrains)
   </Tab>
@@ -158,7 +158,7 @@ Here are some of the ways you can use Claude Code:
   </Accordion>
 
   <Accordion title="Connect your tools with MCP" icon="plug">
-    The [Model Context Protocol (MCP)](/en/mcp) is an open standard for connecting AI tools to external data sources. With MCP, Claude Code can read your design docs in Google Drive, update tickets in Jira, pull data from Slack, or use your own custom tooling.
+    The [Model Context Protocol (MCP)](/en/mcp) is an open standard for connecting AI tools to external data sources. With MCP, Claude Code can read your design docs in Google Drive, update tickets in Jira, pull data from Slack, or use your own custom tooling. The [MCP quickstart](/en/mcp-quickstart) connects your first server end to end.
   </Accordion>
 
   <Accordion title="Customize with instructions, skills, and hooks" icon="sliders">
@@ -172,7 +172,7 @@ Here are some of the ways you can use Claude Code:
   <Accordion title="Run agent teams and build custom agents" icon="users">
     Spawn [multiple Claude Code agents](/en/sub-agents) that work on different parts of a task simultaneously. A lead agent coordinates the work, assigns subtasks, and merges results.
 
-    For fully custom workflows, the [Agent SDK](/en/agent-sdk/overview) lets you build your own agents powered by Claude Code's tools and capabilities, with full control over orchestration, tool access, and permissions.
+    To run several full sessions in parallel and watch them from one screen, use [background agents](/en/agent-view). For fully custom workflows, the [Agent SDK](/en/agent-sdk/overview) lets you build your own agents powered by Claude Code's tools and capabilities, with full control over orchestration, tool access, and permissions.
   </Accordion>
 
   <Accordion title="Pipe, script, and automate with the CLI" icon="terminal">
@@ -205,7 +205,7 @@ Here are some of the ways you can use Claude Code:
 
     * Step away from your desk and keep working from your phone or any browser with [Remote Control](/en/remote-control)
     * Message [Dispatch](/en/desktop#sessions-from-dispatch) a task from your phone and open the Desktop session it creates
-    * Kick off a long-running task on the [web](/en/claude-code-on-the-web) or [iOS app](https://apps.apple.com/app/claude-by-anthropic/id6473753684), then pull it into your terminal with `claude --teleport`
+    * Kick off a long-running task on the [web](/en/claude-code-on-the-web) or [iOS app](https://apps.apple.com/app/claude-by-anthropic/id6473753684), then pull it into your terminal with `claude --teleport`. Teleport requires a claude.ai subscription.
     * Hand off a terminal session to the [Desktop app](/en/desktop) with `/desktop` for visual diff review
     * Route tasks from team chat: mention `@Claude` in [Slack](/en/slack) with a bug report and get a pull request back
   </Accordion>

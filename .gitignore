@@ -110,12 +110,16 @@ data/
 # Docs monitor regenerable outputs (data-claude/ tree)
 data-claude/digest.html
 data-claude/digest.md
+data-claude/dashboard.html
 data-claude/report.html
 data-claude/report.md
 data-claude/history.html
 data-claude/history.md
 data-claude/historical_digest.md
 data-claude/reports/
+
+# Per-project config (config.yaml.example is tracked)
+data-claude/config.yaml
 
 # Root-anchored regenerable outputs (legacy locations; prevent recreation)
 /digest.html

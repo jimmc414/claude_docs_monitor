@@ -68,7 +68,7 @@ All output (snapshots, pages, reports, digest, history) lives under `data-claude
 
 ### Claude Code slash commands
 
-The repo ships five project-level slash commands in `.claude/commands/`:
+The repo ships six project-level slash commands in `.claude/commands/`:
 
 | Command | Purpose |
 |---|---|
@@ -77,6 +77,7 @@ The repo ships five project-level slash commands in `.claude/commands/`:
 | `/query-docs` | Query the change intelligence database |
 | `/ask-docs` | Answer questions by searching cached pages with grep + read |
 | `/ask-docs-bare` | Identical to `/ask-docs`. Exists as a runner-target alias to bypass user-global skill shadowing in eval harnesses |
+| `/impact` | Cross-reference recent doc changes against your actual local Claude config; audit the config against current docs |
 
 These are project-scoped — they activate automatically when you open this repo in Claude Code. The `/check-docs` skill calls `~/.claude/lib/claude_docs_monitor.py` against the project's working directory, so output lands in `data-claude/` where `/ask-docs` can read it.
 
@@ -103,19 +104,46 @@ The skill greps the cached docs for relevant pages, reads the top matches, and s
 
 ### Digest
 
-The `digest` subcommand feeds raw diffs to `claude -p` and generates an actionable intelligence briefing — executive summary, new features, breaking changes, deprecations, flag changes, and action items. It transforms 1400+ lines of unified diff into "here are the 5 things you need to know."
+The `digest` subcommand classifies each changed page with `claude -p` (chunked serially so it stays under the per-call timeout even on large weeks), then synthesizes an actionable intelligence briefing from those classified events — executive summary, new features, breaking changes, deprecations, flag changes, and action items. It transforms 1400+ lines of unified diff into "here are the 5 things you need to know."
 
 ```
 python claude_docs_monitor.py digest
 python claude_docs_monitor.py digest --model opus
 python claude_docs_monitor.py digest --report ~/reports
+python claude_docs_monitor.py digest --output dashboard   # only the dashboard, no LLM call
+python claude_docs_monitor.py digest --output digest      # only digest.md/.html, no dashboard
+python claude_docs_monitor.py digest --no-open            # produce files without opening a browser
 ```
 
-Run `check` first to generate a report, then `digest` to analyze it. The digest writes `data-claude/digest.md` and `data-claude/digest.html`.
+Run `check` first to generate a report, then `digest` to analyze it. Depending on the configured output mode, `digest` writes some combination of `data-claude/digest.md`, `data-claude/digest.html`, and `data-claude/dashboard.html`.
 
 The `/check-docs` skill automatically runs the digest when changes are detected, so you don't need to invoke it separately during a normal check.
 
 Requires the `claude` CLI to be installed and authenticated (Max OAuth via `~/.claude/.credentials.json`), or the Agent SDK installed, or `ANTHROPIC_API_KEY` set. The dispatcher in `llm_backend.py` resolves these in order: SDK → CLI → API.
+
+#### Choosing what `digest` produces
+
+Two artifacts complement each other:
+
+- **`digest.md` / `digest.html`** — curated narrative, top-down skim. Best when you want to know "what should I read first."
+- **`dashboard.html`** — interactive single-file event browser with filters, search, and per-event drawer. Best when you want to poke around the full `change_events` history.
+
+The output mode is resolved in this order:
+
+1. `--output digest|dashboard|both` on the CLI (highest)
+2. `DOCS_MONITOR_OUTPUT` environment variable
+3. `output:` key in `data-claude/config.yaml`
+4. Built-in default `both` (lowest)
+
+A minimal config file looks like:
+
+```yaml
+# data-claude/config.yaml
+output: both        # digest | dashboard | both
+auto_open: true     # false to suppress the browser launch
+```
+
+`PyYAML` is optional — without it, the script parses the simple `key: value` subset above with a built-in fallback. See `data-claude/config.yaml.example` for the documented schema.
 
 ### Change intelligence
 
@@ -211,8 +239,10 @@ data-claude/
   report.md       # Markdown report (latest run)
   history.html    # cumulative HTML report (appended each run)
   history.md      # cumulative Markdown report (appended each run)
-  digest.html     # AI-generated change digest (latest run)
-  digest.md       # AI-generated change digest (latest run)
+  digest.html     # AI-generated change digest (when output ∈ {digest, both})
+  digest.md       # AI-generated change digest (when output ∈ {digest, both})
+  dashboard.html  # interactive event browser (when output ∈ {dashboard, both})
+  config.yaml     # optional per-project config (gitignored; see .example)
 ```
 
 Three tables: `index_snapshots` (the llms.txt file itself), `page_snapshots` (one row per fetch per URL), and `change_events` (AI-classified change metadata). All append-only — every fetch and classification is stored permanently. The `change_events` table accumulates structured intelligence over time: category, severity, summary, details, action items, and keyword tags for each change. Query this data via the `query` command or directly in SQLite.
@@ -231,6 +261,7 @@ claude_docs_monitor/
 │   ├── ask-docs-bare.md
 │   ├── check-docs.md
 │   ├── digest.md
+│   ├── impact.md
 │   └── query-docs.md
 ├── .mcp.json                      # MCP server registration
 ├── data-claude/                   # output directory (created on first run)

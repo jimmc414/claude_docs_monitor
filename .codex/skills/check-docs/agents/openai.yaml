@@ -1,0 +1,4 @@
+interface:
+  display_name: "Check Docs"
+  short_description: "Run docs monitor and summarize changes"
+  default_prompt: "Use $check-docs to run the docs monitor with digest enabled and summarize what changed."

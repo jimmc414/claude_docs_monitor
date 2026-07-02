@@ -34,6 +34,12 @@ The cycle Claude works through for every task: gather context, take action, veri
 
 Learn more: [How Claude Code works](/en/how-claude-code-works#the-agentic-loop)
 
+### Artifact
+
+A live, interactive web page Claude Code publishes from your session to a private URL on claude.ai, so you can see output visually or share it inside your organization instead of reading terminal text. The page updates in place when the session republishes. Artifacts you create from Claude Code appear in the same gallery as artifacts created in claude.ai conversations, but their sharing stops at your organization and they cannot be made public.
+
+Learn more: [Share session output as artifacts](/en/artifacts)
+
 ### Auto memory
 
 Notes Claude writes for itself based on your corrections and preferences, stored per git repository under `~/.claude/projects/`. All worktrees of the same repository share one auto memory directory. The first 200 lines or 25 KB of the `MEMORY.md` index loads at the start of every session. Auto memory is the Claude-written counterpart to [CLAUDE.md](#claude-md), which you write.
@@ -42,7 +48,7 @@ Learn more: [Auto memory](/en/memory#auto-memory)
 
 ### Auto mode
 
-A [permission mode](#permission-mode) where a separate classifier model reviews each action in the background instead of showing you approval prompts. The classifier blocks scope escalation, untrusted infrastructure, and [prompt injection](#prompt-injection). It never sees tool results, so injected instructions cannot influence its decisions. Auto mode is a research preview available on Max, Team, Enterprise, and API plans.
+A [permission mode](#permission-mode) where a separate classifier model reviews actions in the background, so most run without approval prompts; explicit ask rules still prompt. The classifier blocks scope escalation, untrusted infrastructure, and [prompt injection](#prompt-injection). It never sees tool results, so injected instructions cannot influence its decisions. Auto mode is a research preview.
 
 Learn more: [Eliminate prompts with auto mode](/en/permission-modes#eliminate-prompts-with-auto-mode)
 
@@ -56,7 +62,7 @@ Learn more: [Start faster with bare mode](/en/headless#start-faster-with-bare-mo
 
 ### Bundled skills
 
-Prompt-based playbooks included with Claude Code, such as `/batch`, `/simplify`, `/debug`, and `/loop`. Unlike built-in commands, which execute fixed logic, bundled skills give Claude a detailed prompt and let it orchestrate the work, so they can spawn agents, read files, and adapt to your codebase.
+Prompt-based playbooks included with Claude Code, such as `/batch`, `/code-review`, `/debug`, and `/loop`. Unlike built-in commands, which execute fixed logic, bundled skills give Claude a detailed prompt and let it orchestrate the work, so they can spawn agents, read files, and adapt to your codebase.
 
 Learn more: [Bundled skills](/en/skills#bundled-skills)
 
@@ -70,7 +76,7 @@ Learn more: [Channels](/en/channels)
 
 ### Checkpoint
 
-An automatic snapshot of your code captured before each edit Claude makes. Press `Esc` twice or run `/rewind` to restore code, conversation, or both to an earlier point. Checkpoints are local to the session, separate from git, and don't track changes made through the Bash tool.
+A restore point created at each prompt you send. Claude Code snapshots files before every edit so a checkpoint can revert them. Press `Esc` twice or run `/rewind` to restore code, conversation, or both to an earlier point, or to summarize part of the conversation from a selected message. Checkpoints are local to the session, separate from git, and don't track changes made through the Bash tool.
 
 Learn more: [Checkpointing](/en/checkpointing)
 
@@ -82,9 +88,9 @@ Learn more: [The `.claude` directory](/en/claude-directory)
 
 ### CLAUDE.md
 
-A markdown file of persistent instructions you write for Claude, loaded at the start of every session as a user message after the system prompt. Put project conventions, architecture notes, and "always do X" rules here. CLAUDE.md survives [compaction](#compaction) and is re-read fresh from disk afterward.
+A markdown file of persistent instructions you write for Claude, loaded at the start of every session as a user message after the system prompt. Put project conventions, architecture notes, and "always do X" rules here. Project-root CLAUDE.md survives [compaction](#compaction) and is re-read fresh from disk afterward.
 
-You can place CLAUDE.md at project scope in `./CLAUDE.md` or `./.claude/CLAUDE.md`, at user scope in `~/.claude/CLAUDE.md`, or as [managed policy](#managed-settings) for your organization. More specific locations take precedence.
+You can place CLAUDE.md at project scope in `./CLAUDE.md` or `./.claude/CLAUDE.md`, at user scope in `~/.claude/CLAUDE.md`, or as [managed policy](#managed-settings) for your organization. All discovered files are concatenated into context rather than overriding each other, ordered from broadest scope to most specific.
 
 Learn more: [CLAUDE.md files](/en/memory#claude-md-files)
 
@@ -118,13 +124,13 @@ Learn more: [Sessions from Dispatch](/en/desktop#sessions-from-dispatch)
 
 ### Effort level
 
-A setting that controls how much of the adaptive-reasoning thinking budget Claude uses on each turn. Higher effort means more thinking tokens and deeper reasoning; lower effort is faster and cheaper. Effort is supported on Opus 4.7, Opus 4.6, and Sonnet 4.6.
+A setting that controls how much of the adaptive-reasoning thinking budget Claude uses on each turn. Higher effort means more thinking tokens and deeper reasoning; lower effort is faster and cheaper. Effort is supported on Fable 5, on Opus 4.6 and later, and on Sonnet 4.6.
 
 Learn more: [Adjust effort level](/en/model-config#adjust-effort-level)
 
 ### Extended thinking
 
-Visible step-by-step reasoning the model performs before responding. You can cap thinking tokens with `MAX_THINKING_TOKENS` or adjust the [effort level](#effort-level). Thinking appears in gray italic text in the terminal.
+Visible step-by-step reasoning the model performs before responding. You can adjust it with the [effort level](#effort-level), or cap thinking tokens with `MAX_THINKING_TOKENS` on models with a fixed thinking budget. Thinking appears in gray italic text in the terminal.
 
 Learn more: [Use extended thinking](/en/model-config#extended-thinking)
 
@@ -174,7 +180,7 @@ Learn more: [Run Claude Code programmatically](/en/headless)
 
 ### Output style
 
-A configuration that modifies Claude's system prompt to change response behavior, tone, or format. Output styles turn off the software-engineering-specific parts of the default system prompt, unlike [CLAUDE.md](#claude-md) which is delivered as a user message following the system prompt. Built-in styles include Default, Explanatory, and Learning.
+A configuration that modifies Claude's system prompt to change response behavior, tone, or format. Output styles turn off the software-engineering-specific parts of the default system prompt, unlike [CLAUDE.md](#claude-md) which is delivered as a user message following the system prompt. Built-in styles include Default, Proactive, Explanatory, and Learning.
 
 Learn more: [Output styles](/en/output-styles)
 
@@ -206,13 +212,13 @@ Learn more: [Plugins](/en/plugins)
 
 ### Project trust
 
-A one-time dialog accepting a directory before Claude Code loads its configuration. Trust gates auto-installation of marketplace plugins and execution of project-defined hooks. Trusting a directory means its `.claude/settings.json`, `.mcp.json`, and other config files take effect.
+A dialog accepting a directory before Claude Code loads its configuration. Acceptance is saved per project directory, except your home directory, where trust is held for the current session only and the prompt reappears on each launch. Trust gates auto-installation of marketplace plugins and execution of project-defined hooks. Trusting a directory means its `.claude/settings.json`, `.mcp.json`, and other config files take effect.
 
 Learn more: [The `.claude` directory](/en/claude-directory)
 
 ### Prompt injection
 
-Hostile instructions embedded in a file, web page, or tool result that attempt to redirect Claude toward actions you never asked for. Claude Code's defenses include the permission system, command blocklists, and trust verification. [Auto mode](#auto-mode) adds a server-side probe that scans tool results for suspicious content and a classifier that never sees tool results, so injected text cannot influence its approval decisions.
+Hostile instructions embedded in a file, web page, or tool result that attempt to redirect Claude toward actions you never asked for. Claude Code's defenses include the permission system, command injection detection, and trust verification. [Auto mode](#auto-mode) adds a server-side probe that scans tool results for suspicious content and a classifier that never sees tool results, so injected text cannot influence its approval decisions.
 
 Learn more: [Protect against prompt injection](/en/security#protect-against-prompt-injection)
 
@@ -285,6 +291,20 @@ Learn more: [From web to terminal](/en/claude-code-on-the-web#from-web-to-termin
 An action Claude can take: read a file, edit code, run a shell command, search the web, spawn a subagent. Tools are what make Claude Code agentic. Without them, Claude can only respond with text. Each tool use returns a result that informs Claude's next decision in the [agentic loop](#agentic-loop).
 
 Learn more: [Tools available to Claude](/en/tools-reference)
+
+### Turn
+
+One complete response from Claude within a [session](#session). A turn begins when you send a message and ends when Claude finishes responding, with any number of [tool](#tool) calls in between. [Stop hooks](#hook) fire at the end of each turn. A session consists of many turns, and the [agentic loop](#agentic-loop) describes what happens inside one.
+
+Learn more: [How Claude Code works](/en/how-claude-code-works#the-agentic-loop)
+
+## V
+
+### Verification loop
+
+How a session knows the work is actually done rather than just plausible. You give Claude a check it can run, such as a test suite, a build, or a screenshot comparison, and Claude iterates until the check passes instead of stopping after one attempt. A verification loop is the prerequisite for [`/goal`](/en/goal), unattended runs, and [dynamic workflows](/en/workflows): without one, the only thing deciding the agent is finished is the agent itself.
+
+Learn more: [Give Claude a way to verify its work](/en/best-practices#give-claude-a-way-to-verify-its-work)
 
 ## W
 

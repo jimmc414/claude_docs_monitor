@@ -24,7 +24,7 @@ This page walks through the deployment decisions in order. Each row links to the
 
 ## Choose your API provider
 
-Claude Code connects to Claude through one of several API providers. Your choice affects billing, authentication, and which compliance posture you inherit.
+Claude Code connects to Claude through one of several API providers. Your choice affects billing, authentication, which compliance posture you inherit, and which Claude Code features your developers can use.
 
 | Provider                      | Choose this when                                                                                                                      |
 | :---------------------------- | :------------------------------------------------------------------------------------------------------------------------------------ |
@@ -34,13 +34,15 @@ Claude Code connects to Claude through one of several API providers. Your choice
 | Google Vertex AI              | You want to inherit existing GCP compliance controls and billing                                                                      |
 | Microsoft Foundry             | You want to inherit existing Azure compliance controls and billing                                                                    |
 
+Some Claude Code features require a Claude.ai account. [Claude Code on the web](/en/claude-code-on-the-web), [Routines](/en/routines), [Code Review](/en/code-review), [Remote Control](/en/remote-control), and the [Chrome extension](/en/chrome) are not available through Console API keys or cloud-provider credentials alone. If you deploy through Bedrock, Vertex, or Foundry, plan whether developers also need Claude for Teams or Enterprise seats. Each feature page lists its plan requirements.
+
 For the full provider comparison covering authentication, regions, and feature parity, see the [enterprise deployment overview](/en/third-party-integrations). Each provider's auth setup is in [Authentication](/en/authentication).
 
 Proxy and firewall requirements in [Network configuration](/en/network-config) apply regardless of provider. If you want a single endpoint in front of multiple providers or centralized request logging, see [LLM gateway](/en/llm-gateway).
 
 ## Decide how settings reach devices
 
-Managed settings define policy that takes precedence over local developer configuration. Claude Code looks for them in four places and uses the first one it finds on a given device.
+Managed settings define policy that takes precedence over local developer configuration. Claude Code checks the four sources below in priority order and applies the first one that returns a non-empty configuration.
 
 | Mechanism               | Delivery                                                                                                                                                                                              | Priority | Platforms      |
 | :---------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------- | :------------- |
@@ -65,16 +67,19 @@ See [Server-managed settings](/en/server-managed-settings) and [Settings files a
 
 Managed settings can lock down tools, sandbox execution, restrict MCP servers and plugin sources, and control which hooks run. Each row is a control surface with the setting keys that drive it.
 
-| Control                                                                                | What it does                                                                  | Key settings                                                                  |
-| :------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------- | :---------------------------------------------------------------------------- |
-| [Permission rules](/en/permissions)                                                    | Allow, ask, or deny specific tools and commands                               | `permissions.allow`, `permissions.deny`                                       |
-| [Permission lockdown](/en/permissions#managed-only-settings)                           | Only managed permission rules apply; disable `--dangerously-skip-permissions` | `allowManagedPermissionRulesOnly`, `permissions.disableBypassPermissionsMode` |
-| [Sandboxing](/en/sandboxing)                                                           | OS-level filesystem and network isolation with domain allowlists              | `sandbox.enabled`, `sandbox.network.allowedDomains`                           |
-| [Managed policy CLAUDE.md](/en/memory#deploy-organization-wide-claude-md)              | Org-wide instructions loaded in every session, cannot be excluded             | File at the managed policy path                                               |
-| [MCP server control](/en/mcp#managed-mcp-configuration)                                | Restrict which MCP servers users can add or connect to                        | `allowedMcpServers`, `deniedMcpServers`, `allowManagedMcpServersOnly`         |
-| [Plugin marketplace control](/en/plugin-marketplaces#managed-marketplace-restrictions) | Restrict which marketplace sources users can add and install from             | `strictKnownMarketplaces`, `blockedMarketplaces`                              |
-| [Hook restrictions](/en/settings#hook-configuration)                                   | Only managed hooks load; restrict HTTP hook URLs                              | `allowManagedHooksOnly`, `allowedHttpHookUrls`                                |
-| [Version floor](/en/settings)                                                          | Prevent auto-update from installing below an org-wide minimum                 | `minimumVersion`                                                              |
+| Control                                                                                | What it does                                                                                                                                   | Key settings                                                                                                 |
+| :------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------- |
+| [Permission rules](/en/permissions)                                                    | Allow, ask, or deny specific tools and commands                                                                                                | `permissions.allow`, `permissions.deny`                                                                      |
+| [Permission lockdown](/en/permissions#managed-only-settings)                           | Only managed permission rules apply; disable `--dangerously-skip-permissions`                                                                  | `allowManagedPermissionRulesOnly`, `permissions.disableBypassPermissionsMode`                                |
+| [Sandboxing](/en/sandboxing)                                                           | OS-level filesystem and network isolation with domain allowlists                                                                               | `sandbox.enabled`, `sandbox.network.allowedDomains`                                                          |
+| [Managed policy CLAUDE.md](/en/memory#deploy-organization-wide-claude-md)              | Org-wide instructions loaded in every session, cannot be excluded                                                                              | File at the managed policy path                                                                              |
+| [MCP server control](/en/managed-mcp)                                                  | Restrict which MCP servers users can add or connect to, or deploy a fixed set                                                                  | `allowedMcpServers`, `deniedMcpServers`, `allowManagedMcpServersOnly`, or a deployed `managed-mcp.json` file |
+| [Plugin marketplace control](/en/plugin-marketplaces#managed-marketplace-restrictions) | Restrict which marketplace sources users can add and install from                                                                              | `strictKnownMarketplaces`, `blockedMarketplaces`                                                             |
+| [Customization lockdown](/en/settings#strictpluginonlycustomization)                   | Block skills, agents, hooks, and MCP servers from user and project sources, so they can only come from plugins or managed settings             | `strictPluginOnlyCustomization`                                                                              |
+| [Hook restrictions](/en/settings#hook-configuration)                                   | Only managed hooks load; restrict HTTP hook URLs                                                                                               | `allowManagedHooksOnly`, `allowedHttpHookUrls`                                                               |
+| [Disable agent view](/en/agent-view#how-background-sessions-are-hosted)                | Turn off `claude agents`, `--bg`, `/background`, and the on-demand supervisor                                                                  | `disableAgentView`                                                                                           |
+| [Version floor](/en/settings)                                                          | Prevent auto-update from installing below an org-wide minimum                                                                                  | `minimumVersion`                                                                                             |
+| [Required version range](/en/settings)                                                 | Refuse to start at all when the running version is outside an org-approved range. Stronger than `minimumVersion`, which only blocks downgrades | `requiredMinimumVersion`, `requiredMaximumVersion`                                                           |
 
 Permission rules and sandboxing cover different layers. Denying WebFetch blocks Claude's fetch tool, but if Bash is allowed, `curl` and `wget` can still reach any URL. Sandboxing closes that gap with a network domain allowlist enforced at the OS level.
 
@@ -96,17 +101,17 @@ Cloud providers expose spend through AWS Cost Explorer, GCP Billing, or Azure Co
 
 On Team, Enterprise, Claude API, and cloud provider plans, Anthropic does not train models on your code or prompts. Your API provider determines retention and compliance posture.
 
-| Topic                     | What to know                                                                    | Where to start                                 |
-| :------------------------ | :------------------------------------------------------------------------------ | :--------------------------------------------- |
-| Data usage policy         | What Anthropic collects, how long it's retained, what's never used for training | [Data usage](/en/data-usage)                   |
-| Zero Data Retention (ZDR) | Nothing stored after the request completes. Available on Claude for Enterprise  | [Zero data retention](/en/zero-data-retention) |
-| Security architecture     | Network model, encryption, authentication, audit trail                          | [Security](/en/security)                       |
+| Topic                     | What to know                                                                                         | Where to start                                 |
+| :------------------------ | :--------------------------------------------------------------------------------------------------- | :--------------------------------------------- |
+| Data usage policy         | What Anthropic collects, how long it's retained, what's never used for training                      | [Data usage](/en/data-usage)                   |
+| Zero Data Retention (ZDR) | Nothing stored after the request completes. Available to qualified accounts on Claude for Enterprise | [Zero data retention](/en/zero-data-retention) |
+| Security architecture     | Network model, encryption, authentication, audit trail                                               | [Security](/en/security)                       |
 
 If you need request-level audit logging or to route traffic by data sensitivity, place an [LLM gateway](/en/llm-gateway) between developers and your provider. For regulatory requirements and certifications, see [Legal and compliance](/en/legal-and-compliance).
 
 ## Verify and onboard
 
-After configuring managed settings, have a developer run `/status` inside Claude Code. The output includes a line beginning with `Enterprise managed settings` followed by the source in parentheses, one of `(remote)`, `(plist)`, `(HKLM)`, `(HKCU)`, or `(file)`. See [Verify active settings](/en/settings#verify-active-settings).
+After configuring managed settings, have a developer run `/status` inside Claude Code. On the **Status** tab, the `Setting sources` line shows `Enterprise managed settings` followed by the source in parentheses, one of `(remote)`, `(plist)`, `(HKLM)`, `(HKCU)`, or `(file)`. See [Verify active settings](/en/settings#verify-active-settings).
 
 Share these resources to help developers get started:
 
@@ -128,5 +133,6 @@ With provider and delivery mechanism chosen, move on to detailed configuration:
 
 * [Server-managed settings](/en/server-managed-settings): deliver managed policy from the Claude admin console
 * [Settings reference](/en/settings): every setting key, file location, and precedence rule
+* [Monorepos and large repos](/en/large-codebases): per-directory configuration patterns for organizations deploying into a monorepo
 * [Amazon Bedrock](/en/amazon-bedrock), [Google Vertex AI](/en/google-vertex-ai), [Microsoft Foundry](/en/microsoft-foundry): provider-specific deployment
 * [Claude Enterprise Administrator Guide](https://claude.com/resources/tutorials/claude-enterprise-administrator-guide): SSO, SCIM, seat management, and rollout playbook

@@ -45,7 +45,7 @@ Claude Code behaves the same everywhere. What changes is where code executes and
 | **Uses your local config**                   | No, repo only                                                                                                   | Yes                          | Yes                    | Yes for local, no for cloud |
 | **Requires GitHub**                          | Yes, or [bundle a local repo](/en/claude-code-on-the-web#send-local-repositories-without-github) via `--remote` | No                           | No                     | Only for cloud sessions     |
 | **Keeps running if you disconnect**          | Yes                                                                                                             | While terminal stays open    | No                     | Depends on session type     |
-| **[Permission modes](/en/permission-modes)** | Auto accept edits, Plan                                                                                         | Ask, Auto accept edits, Plan | All modes              | Depends on session type     |
+| **[Permission modes](/en/permission-modes)** | Accept edits, Plan, Auto                                                                                        | Ask, Auto accept edits, Plan | All modes              | Depends on session type     |
 | **Network access**                           | Configurable per environment                                                                                    | Your machine's network       | Your machine's network | Depends on session type     |
 
 See the [terminal quickstart](/en/quickstart), [Desktop app](/en/desktop), or [Remote Control](/en/remote-control) docs to set those up.
@@ -119,7 +119,7 @@ With GitHub connected and an environment created, you're ready to submit tasks.
   </Step>
 
   <Step title="Choose a permission mode">
-    The mode dropdown next to the input defaults to **Auto accept edits**, where Claude makes changes and pushes a branch without stopping for approval. Switch to **Plan mode** if you want Claude to propose an approach and wait for your go-ahead before editing files. Cloud sessions don't offer Ask permissions, Auto mode, or Bypass permissions. See [Permission modes](/en/permission-modes) for the full list.
+    The mode dropdown next to the input defaults to **Accept edits**, where Claude makes changes and pushes a branch without stopping for approval. Switch to **Plan mode** if you want Claude to propose an approach and wait for your go-ahead before editing files. Cloud sessions don't offer Ask permissions or Bypass permissions. See [Permission modes](/en/permission-modes) for the full list.
   </Step>
 
   <Step title="Describe the task and submit">
@@ -176,7 +176,7 @@ When Claude finishes, review the changes, leave feedback on specific lines, and 
 
 ### No repositories appear after connecting GitHub
 
-The Claude GitHub App needs explicit access to each repository you want to use. On github.com, open **Settings → Applications → Claude → Configure** and verify your repo is listed under **Repository access**. Private repositories need the same authorization as public ones.
+A cloud session can use any repository the connected GitHub account can see, regardless of which repositories the Claude GitHub App is installed on. If a repository is missing, verify the connected GitHub account has access to it on GitHub. If you also want [Auto-fix](/en/claude-code-on-the-web#auto-fix-pull-requests) for a repository, install the App on it: on github.com, open **Settings → Applications → Claude → Configure** and verify the repository is listed under **Repository access**. Private repositories need the same authorization as public ones.
 
 ### The page only shows a GitHub login button
 

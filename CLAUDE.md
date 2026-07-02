@@ -8,7 +8,7 @@ Single-file Python tool that monitors Claude Code documentation at `code.claude.
 
 ### Single-File Design
 
-Everything lives in `claude_docs_monitor.py` (~2150 lines). No package structure, no setup.py. One required dependency (`httpx[http2]`), two optional (`rich`, `mcp`). An optional `mcp_server.py` (~220 lines) provides read-only MCP access to the database.
+Everything lives in `claude_docs_monitor.py` (~3500 lines, including a ~1100-line inline `_DASHBOARD_TEMPLATE` HTML/CSS/JS string). No package structure, no setup.py. One required dependency (`httpx[http2]`), three optional (`rich`, `mcp`, `PyYAML`). An optional `mcp_server.py` (~220 lines) provides read-only MCP access to the database.
 
 ### Layers (top to bottom)
 
@@ -58,10 +58,13 @@ Three tables in `data-claude/snapshots.db`:
 
 1. Read `data-claude/report.md` → check for changes (| Changed | 0 |)
 2. Extract `## Diffs` section to minimize tokens
-3. **Phase 1 — Structured classification**: Pipe diffs to `claude -p` with `--output-format json --json-schema` → parse JSON → store events in `change_events` table (skips if already classified for this run)
-4. **Phase 2 — Text digest**: Pipe diffs to `claude -p --output-format text` → write `digest.md` and `digest.html`
-5. **Phase 3 — GitHub issues** (optional, `--gh-issue`): Create issues via `gh` CLI for breaking changes
-6. Strip `CLAUDECODE` env var to allow nested invocation
+3. Resolve output mode via `_resolve_output()` (CLI > env > `config.yaml` > `"both"`)
+4. **Phase 1 — Structured classification** (always runs): Diffs are split into chunks bounded by `_MAX_DIFFS_PER_CHUNK` (10) and `_MAX_BYTES_PER_CHUNK` (~60 KB) and classified **serially** with `claude -p --output-format json --json-schema`. A failing chunk logs a warning and the run continues; surviving events are merged and stored in `change_events` (skips if already classified for this run; the dashboard and `--gh-issue` step both depend on these events). Empty-URL events are dropped at the insert path.
+5. **Phase 2a — Narrative digest** (when `output ∈ {digest, both}`): Reads back the classified events for this run via `_build_narrative_input_from_events()` and pipes that compact per-event metadata (not raw diffs) to `claude -p --output-format text` → write `digest.md` and `digest.html`. **Variant B fallback:** if classification stored zero events, runs map-reduce on raw diff chunks (mini-digest per chunk, then a reduce call) so the user always gets a digest when changes were detected.
+6. **Phase 2b — Dashboard** (when `output ∈ {dashboard, both}`): Build payload from `change_events` (joined with `page_snapshots` for diff excerpts) and render `dashboard.html` from the inline `_DASHBOARD_TEMPLATE`
+7. **Browser launch** (unless `--no-open` or `auto_open: false`): open each generated HTML in `files_to_open` order with a 150ms gap between
+8. **Phase 3 — GitHub issues** (optional, `--gh-issue`): Create issues via `gh` CLI for breaking changes
+9. Strip `CLAUDECODE` env var to allow nested invocation
 
 ### Key Design Decisions
 
@@ -81,7 +84,7 @@ Three tables in `data-claude/snapshots.db`:
 | Command | Async | Key Flags |
 |---------|-------|-----------|
 | `check` (default) | Yes | `--quiet`, `--poll SEC`, `--save-diffs DIR`, `--dump DIR`, `--report DIR`, `--include-html` |
-| `digest` | No | `--model ALIAS`, `--report DIR`, `--gh-issue`, `--gh-repo OWNER/REPO` |
+| `digest` | No | `--model ALIAS`, `--report DIR`, `--output {digest,dashboard,both}`, `--no-open`, `--gh-issue`, `--gh-repo OWNER/REPO` |
 | `query` | No | `[KEYWORD]`, `--category`, `--severity`, `--page`, `--since`, `--until`, `--limit`, `--json` |
 | `backfill` | No | `--model ALIAS`, `--dry-run`, `--include-html` |
 | `history` | No | `[URL]` positional |
@@ -127,11 +130,36 @@ All written to `data-claude/` (override with `--report DIR`):
 | `pages/*.md` | Overwritten each run | Latest doc pages as markdown |
 | `report.md` / `report.html` | Overwritten each run | Summary + diffs for latest run |
 | `history.md` / `history.html` | Appended each run | Cumulative changelog |
-| `digest.md` / `digest.html` | Overwritten each run | AI-generated change analysis |
+| `digest.md` / `digest.html` | Overwritten each digest run (output ∈ {digest, both}) | AI-generated change analysis |
+| `dashboard.html` | Overwritten each digest run (output ∈ {dashboard, both}) | Interactive single-file event browser, embeds full `change_events` history |
+| `impact.md` | Overwritten each `/impact` run | Setup impact report: recent change events scored against the user's local Claude config, plus a config-vs-docs audit |
+
+## Configuration
+
+`digest` reads optional configuration from `data-claude/config.yaml`. Two
+keys are honored in v1:
+
+```yaml
+# data-claude/config.yaml
+output: both        # digest | dashboard | both — which artifact(s) to produce
+auto_open: true     # false to suppress browser launches even without --no-open
+```
+
+Precedence for `output`: `--output` CLI flag → `DOCS_MONITOR_OUTPUT` env var →
+`config.yaml` → built-in default `both`. Invalid values fall through to the
+next layer with a printed warning.
+
+`PyYAML` is optional. If absent, a built-in flat `key: value` parser handles
+the subset above. A committed `data-claude/config.yaml.example` documents the
+schema; the real `config.yaml` is gitignored so each user picks their own.
+
+When `output=both`, `digest.html` and `dashboard.html` both auto-open in the
+browser (digest first, dashboard ~150ms later). `--no-open` and
+`auto_open: false` suppress every browser launch.
 
 ## Skills (Claude Code Slash Commands)
 
-Four skills in `.claude/commands/`:
+Five skills in `.claude/commands/`:
 
 ### `/check-docs`
 Runs the full monitor pipeline from the project directory. The script writes natively to `data-claude/`, so there is no copy step. Auto-runs `/digest` if changes detected.
@@ -144,6 +172,9 @@ Q&A against cached doc pages. Uses Grep to search `data-claude/pages/*.md`, read
 
 ### `/query-docs`
 Query the change intelligence database. Searches accumulated change events by category, severity, page, keyword, or date range.
+
+### `/impact`
+Personal impact analysis, callable independently of the monitor pipeline. Builds a profile of the user's actual Claude environment (`~/.claude/settings.json`, rules, lib scripts, plugins, MCP config), then (a) scores recent `change_events` against that profile (direct / likely / none, with citations) and (b) audits the profile's checkable elements — env vars, settings keys, model IDs, `claude` CLI flags used by scripts — against the cached pages for deprecations, conflicts, and unused adjacent capabilities. Pure skill: the session does the reasoning with Grep/Read; no script changes, no DB writes. Writes `data-claude/impact.md`. Optional window argument (`7d`, `30d`, `90d`, `all`; default `30d`).
 
 ## Two-Copy Installation Pattern
 
@@ -166,7 +197,7 @@ cp .claude/commands/query-docs.md ~/.claude/commands/query-docs.md
 
 ### Installing into another project
 
-Copy four skill files and the script:
+Copy five skill files and the script:
 
 ```bash
 # Skills (into user-global commands)
@@ -174,6 +205,7 @@ cp .claude/commands/check-docs.md ~/.claude/commands/
 cp .claude/commands/digest.md ~/.claude/commands/
 cp .claude/commands/ask-docs.md ~/.claude/commands/
 cp .claude/commands/query-docs.md ~/.claude/commands/
+cp .claude/commands/impact.md ~/.claude/commands/
 
 # Script
 mkdir -p ~/.claude/lib
@@ -255,4 +287,5 @@ AND run_timestamp >= datetime('now', '-30 days');
 - **Required**: `httpx[http2]>=0.27,<1.0` (async HTTP/2 client)
 - **Optional**: `rich` (colored output, progress bars, tables — gracefully skipped)
 - **Optional**: `mcp>=1.0` (MCP server — see `requirements-mcp.txt`)
+- **Optional**: `PyYAML` (richer parsing of `data-claude/config.yaml`; a built-in flat-key parser is used otherwise)
 - **For digest**: `claude` CLI installed and authenticated (Max OAuth via `~/.claude/.credentials.json`)

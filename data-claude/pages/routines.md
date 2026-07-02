@@ -318,6 +318,8 @@ By default, Claude can only push to branches prefixed with `claude/`. This preve
 
 Routines can use your connected MCP connectors to read from and write to external services during each run. For example, a routine that triages support requests might read from a Slack channel and create issues in Linear.
 
+Connectors are the [claude.ai integrations](/en/mcp#use-mcp-servers-from-claude-ai) on your account. MCP servers you added locally in the CLI with `claude mcp add` are stored on your machine rather than your claude.ai account, so they do not appear in the connectors list. To use one of those servers in a routine, add it as a connector at [claude.ai/customize/connectors](https://claude.ai/customize/connectors), or declare it in a committed [`.mcp.json`](/en/mcp#project-scope) so it is part of the cloned repository.
+
 When you create a routine, all of your currently connected connectors are included by default. Remove any that aren't needed to limit which tools Claude has access to during the run. You can also add connectors directly from the routine form.
 
 To manage or add connectors outside of the routine form, visit **Settings > Connectors** on claude.ai or use `/schedule update` in the CLI.
@@ -358,11 +360,22 @@ See [Network access](/en/claude-code-on-the-web#network-access) for details on a
 
 Routines draw down subscription usage the same way interactive sessions do. In addition to the standard subscription limits, routines have a daily cap on how many runs can start per account. See your current consumption and remaining daily routine runs at [claude.ai/code/routines](https://claude.ai/code/routines) or [claude.ai/settings/usage](https://claude.ai/settings/usage).
 
-When a routine hits the daily cap or your subscription usage limit, organizations with extra usage enabled can keep running routines on metered overage. Without extra usage, additional runs are rejected until the window resets. Enable extra usage from **Settings > Billing** on claude.ai.
+When a routine hits the daily cap or your subscription usage limit, organizations with usage credits turned on can keep running routines on metered overage. Without usage credits, additional runs are rejected until the window resets. Turn on usage credits from **Settings > Billing** on claude.ai.
 
 One-off runs do not count against the daily routine cap. They draw down your regular subscription usage like any other session, but they are exempt from the per-account daily routine run allowance.
 
 ## Troubleshooting
+
+### `/schedule` returns "Unknown command"
+
+The CLI hides `/schedule` when one of its requirements is not met. The cause is usually one of the following:
+
+* You are authenticated with a Console API key or a cloud provider such as Bedrock, Vertex, or Foundry. `/schedule` requires a claude.ai subscription login. If `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set in your shell, or `apiKeyHelper` is set in `settings.json`, remove it first, since these take precedence over a claude.ai login
+* `DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, or `DISABLE_GROWTHBOOK` is set in your shell environment or in the `env` block of a [`settings.json` file](/en/settings#available-settings). These disable feature-flag fetching, which `/schedule` depends on
+* You are inside a Claude Code on the web session. Manage routines from the [web UI](https://claude.ai/code/routines) instead
+* {/* min-version: 2.1.81 */}Your CLI is older than v2.1.81. Run `claude update`
+
+You can always create and manage routines at [claude.ai/code/routines](https://claude.ai/code/routines) regardless of how the CLI is configured.
 
 ### "Routines are disabled by your organization's policy"
 

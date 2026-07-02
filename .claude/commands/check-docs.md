@@ -60,3 +60,9 @@ Read `/mnt/c/python/claude_docs_monitor/data-claude/report.md` (first 30 lines) 
 - Any errors encountered
 
 If no changes were detected, just say so concisely.
+
+---
+
+The digest step honors `data-claude/config.yaml` (`output: digest | dashboard | both`,
+`auto_open: true | false`), the `DOCS_MONITOR_OUTPUT` env var, and `--output` on
+the CLI. Default is `both`. See `data-claude/config.yaml.example` for the format.

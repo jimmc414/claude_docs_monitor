@@ -16,11 +16,13 @@ Match the error message or symptom you're seeing to a fix:
 | :------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------- |
 | `command not found: claude` or `'claude' is not recognized`                                 | [Fix your PATH](#command-not-found-claude-after-installation)                                                           |
 | `syntax error near unexpected token '<'`                                                    | [Install script returns HTML](#install-script-returns-html-instead-of-a-shell-script)                                   |
-| `curl: (56) Failure writing output to destination`                                          | [Check connectivity or use an alternative installer](#curl-56-failure-writing-output-to-destination)                    |
+| `curl: (22) The requested URL returned error: 403`                                          | [Install script returned 403](#install-script-returns-html-instead-of-a-shell-script)                                   |
+| `curl: (23)` or `curl: (56) Failure writing output to destination`                          | [Check connectivity or use an alternative installer](#curl-56-failure-writing-output-to-destination)                    |
 | `Killed` during install on Linux                                                            | [Add swap space for low-memory servers](#install-killed-on-low-memory-linux-servers)                                    |
 | `TLS connect error` or `SSL/TLS secure channel`                                             | [Update CA certificates](#tls-or-ssl-connection-errors)                                                                 |
 | `Failed to fetch version` or can't reach download server                                    | [Check network and proxy settings](#check-network-connectivity)                                                         |
 | `irm is not recognized` or `&& is not valid`                                                | [Use the right command for your shell](#wrong-install-command-on-windows)                                               |
+| `Cask 'claude-code' is unavailable: No Cask with this name exists`                          | [Update Homebrew](#homebrew-cask-unavailable-or-outdated)                                                               |
 | `'bash' is not recognized as the name of a cmdlet`                                          | [Use the Windows installer command](#wrong-install-command-on-windows)                                                  |
 | `Claude Code on Windows requires either Git for Windows (for bash) or PowerShell`           | [Install a shell](#claude-code-on-windows-requires-either-git-for-windows-for-bash-or-powershell)                       |
 | `Claude Code does not support 32-bit Windows`                                               | [Open Windows PowerShell, not the x86 entry](#claude-code-does-not-support-32-bit-windows)                              |
@@ -54,6 +56,8 @@ The installer downloads from `downloads.claude.ai`. Verify you can reach it:
 curl -sI https://downloads.claude.ai/claude-code-releases/latest
 ```
 
+In PowerShell, run `curl.exe -sI` instead. PowerShell aliases `curl` to `Invoke-WebRequest`, which rejects the `-sI` flags.
+
 An `HTTP/2 200` line means you reached the server. If you see no output, `Could not resolve host`, or a connection timeout, your network is blocking the connection. Common causes:
 
 * Corporate firewalls or proxies blocking `downloads.claude.ai`
@@ -85,6 +89,10 @@ This example sets both proxy variables, then runs the installer through your pro
 ### Verify your PATH
 
 If installation succeeded but you get a `command not found` or `not recognized` error when running `claude`, the install directory isn't in your PATH. Your shell searches for programs in directories listed in PATH, and the installer places `claude` at `~/.local/bin/claude` on macOS/Linux or `%USERPROFILE%\.local\bin\claude.exe` on Windows.
+
+<Note>
+  The [VS Code extension](/en/vs-code) does not place `claude` at this location. It bundles a private copy of the CLI inside the extension directory for its own chat panel and does not add it to PATH. If you have only installed the extension, `~/.local/bin/claude` will not exist. Run the [standalone install](/en/setup) to use `claude` from a terminal, then continue below.
+</Note>
 
 Check if the install directory is in your PATH by listing your PATH entries and filtering for `local/bin`:
 
@@ -176,6 +184,8 @@ Multiple Claude Code installations can cause version mismatches or unexpected be
     ```bash theme={null}
     ls -la ~/.local/bin/claude
     ```
+
+    If either `ls` command prints `No such file or directory`, that's not an error. It means nothing is installed at that location, so move on to the next check.
 
     ```bash theme={null}
     ls -la ~/.claude/local/
@@ -298,7 +308,15 @@ On PowerShell, the same problem appears as:
 Invoke-Expression: Missing argument in parameter list.
 ```
 
-This means the install URL returned an HTML page instead of the install script. If the HTML page says "App unavailable in region," Claude Code is not available in your country. See [supported countries](https://www.anthropic.com/supported-countries).
+Depending on how the request was routed, you may instead see a 403 with no HTML body:
+
+```text theme={null}
+curl: (22) The requested URL returned error: 403
+```
+
+These all mean the install URL returned an HTML page or an error status instead of the install script. If the HTML page says "App unavailable in region," Claude Code is not available in your country. See [supported countries](https://www.anthropic.com/supported-countries).
+
+A bare 403 with no body often has the same cause, but it can also come from a corporate proxy or firewall blocking the download. If you are in a supported country and still see the 403, work through [Check network connectivity](#check-network-connectivity) before trying the alternative installers below, since those reach the same hosts.
 
 Otherwise, this can happen due to network issues, regional routing, or a temporary service disruption.
 
@@ -335,7 +353,7 @@ This means the install directory isn't in your shell's search path. See [Verify 
 
 ### `curl: (56) Failure writing output to destination`
 
-The `curl ... | bash` command downloads the script and pipes it to Bash for execution. This error means the connection broke before the script finished downloading. Common causes include network interruptions, the download being blocked mid-stream, or system resource limits.
+The `curl ... | bash` command downloads the script and pipes it to Bash for execution. This error, and the related `curl: (23) Failure writing output to destination`, means Bash did not receive the complete script. Exit code 56 indicates the download itself was interrupted, and exit code 23 indicates curl could not write what it received to the pipe, usually because Bash exited early.
 
 **Solutions:**
 
@@ -358,6 +376,17 @@ The `curl ... | bash` command downloads the script and pipes it to Bash for exec
    ```powershell theme={null}
    winget install Anthropic.ClaudeCode
    ```
+
+### Homebrew cask unavailable or outdated
+
+Homebrew reports `Error: Cask 'claude-code' is unavailable: No Cask with this name exists` when your local copy of the Homebrew cask index predates the cask's publication. Refresh the index and retry:
+
+```bash theme={null}
+brew update
+brew install --cask claude-code
+```
+
+If Homebrew installs an older Claude Code version than you expect, the same stale index is usually the cause. The `claude-code` cask tracks the stable channel and is typically about one week behind the latest release; for the newest version run `brew install --cask claude-code@latest` instead. See [Configure release channel](/en/setup#configure-release-channel) for the difference between the two casks.
 
 ### TLS or SSL connection errors
 
@@ -527,12 +556,11 @@ Update Claude Desktop to the latest version to fix this issue.
 
 ### Claude Code on Windows requires either Git for Windows (for bash) or PowerShell
 
-Claude Code on native Windows needs at least one shell: either [Git for Windows](https://git-scm.com/downloads/win) for Bash, or PowerShell. When neither is found, this error appears at startup. If only PowerShell is found, Claude Code uses the PowerShell tool instead of Bash.
+Git for Windows is optional. Claude Code uses the [PowerShell tool](/en/tools-reference#powershell-tool) when Git Bash is absent, so this error means neither shell was found.
 
-**If neither is installed**, install one:
+**If PowerShell is missing from your PATH**, its default location is `C:\Windows\System32\WindowsPowerShell\v1.0\`. Add that directory to your `PATH`, or install [PowerShell 7](https://aka.ms/powershell), which provides `pwsh`.
 
-* Git for Windows: download from [git-scm.com/downloads/win](https://git-scm.com/downloads/win). During setup, select "Add to PATH." Restart your terminal after installing.
-* PowerShell 7: download from [aka.ms/powershell](https://aka.ms/powershell).
+**To install Git for Windows instead**, download it from [git-scm.com/downloads/win](https://git-scm.com/downloads/win). During setup, select "Add to PATH." Restart your terminal after installing. Installing it enables the Bash tool, useful when working with Bash-based scripts and tooling.
 
 **If Git is already installed** but Claude Code can't find it, set the path in your [settings.json file](/en/settings):
 
@@ -545,6 +573,10 @@ Claude Code on native Windows needs at least one shell: either [Git for Windows]
 ```
 
 If your Git is installed somewhere else, find the path by running `where.exe git` in PowerShell and use the `bin\bash.exe` path from that directory.
+
+**If the path is correct and the file exists** but Claude Code still reports it as not found, endpoint security software such as AppLocker, Group Policy software restriction policies, or EDR agents may be interfering. On versions before v2.1.116, Claude Code spawned a child process (`cmd.exe`) to verify the path, which these policies can block — a common signal is that `cmd.exe /c dir "C:\Program Files\Git\bin\bash.exe"` works when you run it directly in PowerShell but fails silently when launched by `claude.exe`.
+
+Claude Code v2.1.116 and later check the filesystem directly, so update first. If the error persists on a current version, ask your IT team to allowlist `claude.exe` and the processes it spawns, including `cmd.exe` and `bash.exe`, in your endpoint protection policy.
 
 ### Claude Code does not support 32-bit Windows
 

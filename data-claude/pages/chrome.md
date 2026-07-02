@@ -62,7 +62,7 @@ Before using Claude Code with Chrome, you need:
   </Step>
 </Steps>
 
-Run `/chrome` at any time to check the connection status, manage permissions, or reconnect the extension.
+Run `/chrome` at any time to check the connection status, manage permissions, reconnect the extension, or choose which connected browser to use. If more than one browser is connected when a browser action starts, Claude prompts you to pick one.
 
 For VS Code, see [browser automation in VS Code](/en/vs-code#automate-browser-tasks-with-chrome).
 
@@ -168,7 +168,7 @@ Claude records the interaction sequence and saves it as a GIF file.
 
 ### Extension not detected
 
-If Claude Code shows "Chrome extension not detected":
+If Claude Code can't detect the Chrome extension:
 
 1. Verify the Chrome extension is installed and enabled in `chrome://extensions`
 2. Verify Claude Code is up to date by running `claude --version`

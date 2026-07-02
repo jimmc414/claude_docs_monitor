@@ -1,0 +1,4 @@
+rank,tool,label,total_score,core_onboarding,power_user_depth,automation_integrations,extensibility_customization,security_governance,enterprise_operations,docs_reliability
+1,claude,Claude,100.00,15.00,20.00,18.00,15.00,17.00,10.00,5.00
+2,codex,Codex,98.80,15.00,20.00,18.00,15.00,17.00,8.80,5.00
+3,gemini,Gemini,95.60,15.00,20.00,15.60,15.00,17.00,10.00,3.00

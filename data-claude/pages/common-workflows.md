@@ -23,6 +23,8 @@ These are prompt patterns for everyday tasks like exploring unfamiliar code, deb
 
 ### Understand new codebases
 
+For configuring Claude Code in a monorepo or large codebase, see [Monorepos and large repos](/en/large-codebases).
+
 #### Get a quick codebase overview
 
 Suppose you've just joined a new project and need to understand its structure quickly.
@@ -473,7 +475,7 @@ Work on a feature in one terminal while Claude fixes a bug in another, without t
 claude --worktree feature-auth
 ```
 
-Run the same command with a different name in a second terminal to start an isolated parallel session. See [Worktrees](/en/worktrees) for cleanup, `.worktreeinclude`, and non-git VCS support.
+Run the same command with a different name in a second terminal to start an isolated parallel session. See [Worktrees](/en/worktrees) for cleanup, `.worktreeinclude`, and non-git VCS support. To monitor parallel sessions from one screen instead of separate terminals, see [background agents](/en/agent-view).
 
 ## Plan before editing
 

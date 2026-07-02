@@ -1,0 +1,17 @@
+# claude_docs_monitor — per-project configuration
+#
+# Copy to `data-claude/config.yaml` and edit. The actual config.yaml is
+# gitignored so each user can pick their own preference.
+#
+# Precedence: CLI flag (--output ...) > env var (DOCS_MONITOR_OUTPUT=...) >
+# this file > built-in default ("both").
+
+# Which output(s) `digest` produces.
+#   digest    — narrative `digest.md` / `digest.html` only (curated, top-down skim)
+#   dashboard — interactive `dashboard.html` only (exploratory filter/search)
+#   both      — produce both
+output: both
+
+# Whether to auto-open generated HTML files in the browser.
+# `--no-open` on the CLI always wins over this setting.
+auto_open: true

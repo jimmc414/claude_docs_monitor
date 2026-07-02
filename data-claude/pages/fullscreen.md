@@ -40,7 +40,7 @@ Because the conversation lives in the alternate screen buffer instead of your te
 | :-------------------------------------------------- | :----------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
 | `Cmd+f` or tmux search to find text                 | `Ctrl+o` for transcript mode, then `/` to search or `[` to write to scrollback | [Search and review the conversation](#search-and-review-the-conversation) |
 | Terminal's native click-and-drag to select and copy | In-app selection, copies automatically on mouse release                        | [Use the mouse](#use-the-mouse)                                           |
-| `Cmd`-click to open a URL                           | Click the URL                                                                  | [Use the mouse](#use-the-mouse)                                           |
+| `Cmd`-click to open a URL                           | `Cmd`-click on macOS, `Ctrl`-click elsewhere                                   | [Use the mouse](#use-the-mouse)                                           |
 
 If mouse capture interferes with your workflow, you can [turn it off](#keep-native-text-selection) while keeping the flicker-free rendering.
 
@@ -49,8 +49,9 @@ If mouse capture interferes with your workflow, you can [turn it off](#keep-nati
 Fullscreen rendering captures mouse events and handles them inside Claude Code:
 
 * **Click in the prompt input** to position your cursor anywhere in the text you're typing.
+* **Click a suggestion in the `/` command or `@` file list** to accept it. Hovering highlights the row under your cursor.
 * **Click a collapsed tool result** to expand it and see the full output. Click again to collapse. The tool call and its result expand together. Only messages that have more to show are clickable.
-* **Click a URL or file path** to open it. File paths in tool output, like the ones printed after an Edit or Write, open in your default application. Plain `http://` and `https://` URLs open in your browser. In most terminals this replaces native `Cmd`-click or `Ctrl`-click, which mouse capture intercepts. In the VS Code integrated terminal and similar xterm.js-based terminals, keep using `Cmd`-click. Claude Code defers to the terminal's own link handler there to avoid opening links twice.
+* **Hold `Cmd` on macOS, or `Ctrl` on Linux and Windows, and click a URL or file path** to open it. File paths in tool output, like the ones printed after an Edit or Write, open in your default application. Plain `http://` and `https://` URLs open in your browser. {/* min-version: 2.1.181 */}As of v2.1.181, a plain click without holding `Cmd` or `Ctrl` no longer opens links, matching native terminal behavior. In the VS Code integrated terminal and similar xterm.js-based terminals, Claude Code defers to the terminal's own link handler, which uses the same gesture.
 * **Click and drag** to select text anywhere in the conversation. Double-click selects a word, matching iTerm2's word boundaries so a file path selects as one unit. Triple-click selects the line.
 * **Scroll with the mouse wheel** to move through the conversation.
 
@@ -91,7 +92,11 @@ Set `CLAUDE_CODE_SCROLL_SPEED` to multiply the base scroll distance:
 export CLAUDE_CODE_SCROLL_SPEED=3
 ```
 
-A value of `3` matches the default in `vim` and similar applications. The setting accepts values from 1 to 20.
+A value of `3` matches the default in `vim` and similar applications. The setting accepts values from 1 to 20, and fractional values below 1 such as `0.5` to slow accelerated trackpad and wheel scrolling in terminals that already amplify wheel events.
+
+To adjust scroll speed interactively, run `/scroll-speed`. The dialog shows a ruler you can scroll while it is open so you can feel the change immediately. Press `←` and `→` to adjust, `r` to reset to the auto-detected default, and `Enter` to save. The command writes the same value the `CLAUDE_CODE_SCROLL_SPEED` environment variable sets, persisted to `~/.claude/settings.json`. The command is not available in the JetBrains IDE terminal.
+
+Separately from the base speed, Claude Code accelerates the scroll rate when you spin the wheel quickly, so a fast spin covers more distance than the same number of slow notches. {/* min-version: 2.1.174 */}To turn acceleration off and keep a constant rate per notch, set `wheelScrollAccelerationEnabled` to `false` in [`settings.json`](/en/settings#available-settings). This setting requires Claude Code v2.1.174 or later.
 
 ### Scroll in the JetBrains IDE terminal
 
@@ -146,9 +151,26 @@ tmux does not support synchronized output, so you may see more flicker during re
 
 Mouse capture is the most common friction point, especially over SSH or inside tmux. When Claude Code captures mouse events, your terminal's native copy-on-select stops working. The selection you make with click-and-drag exists inside Claude Code, not in your terminal's selection buffer, so tmux copy mode, Kitty hints, and similar tools don't see it.
 
-Claude Code tries to write the selection to your clipboard, but the path it uses depends on your setup. Inside tmux it writes to the tmux paste buffer. Over SSH it falls back to OSC 52 escape sequences, which some terminals block by default. iTerm2 blocks them until you turn on Settings → General → Selection → Applications in terminal may access clipboard. Running [`/terminal-setup`](/en/terminal-config) in iTerm2 enables this for you. Claude Code prints a toast after each copy telling you which path it used.
+Claude Code writes the selection to your system clipboard, and the path it uses depends on your setup. On a local session it runs a native clipboard tool:
 
-For a one-off native selection, hold your terminal's bypass modifier while you click and drag: `Option` in iTerm2, or `Shift` in most Linux and Windows terminals. The modifier tells your terminal to handle the selection itself instead of forwarding mouse events to Claude Code, so `Cmd+C` and your terminal's other copy shortcuts work on it.
+* **macOS**: `pbcopy`
+* **Linux**: `wl-copy` on Wayland, or `xclip` or `xsel` on X11, whichever is installed. Claude Code writes both the clipboard and the PRIMARY selection, so middle-click paste works.
+* **Windows and WSL**: PowerShell `Set-Clipboard`
+
+Inside tmux it also writes to the tmux paste buffer. Over SSH it falls back to OSC 52 escape sequences. Claude Code prints a toast after each copy telling you which path it used.
+
+Some terminals block OSC 52 by default. iTerm2 blocks it until you turn on Settings → General → Selection → Applications in terminal may access clipboard; running [`/terminal-setup`](/en/terminal-config) in iTerm2 enables this for you.
+
+For a one-off native selection, the key to use depends on your terminal:
+
+* **Terminal.app**: `Fn`
+* **iTerm2**: `Option`
+* **VS Code, Cursor, and Devin Desktop**: `Shift`, or `Option` on macOS with the `terminal.integrated.macOptionClickForcesSelection` setting enabled
+* **Most other terminals**: `Shift`
+
+Hold that key while you click and drag. Your terminal handles the selection itself instead of passing it to Claude Code, so copy shortcuts like `Cmd+C` work on what you select. Claude Code also shows the correct key in its on-screen hint.
+
+Over SSH or inside tmux, Claude Code can't always detect the terminal you're connecting from, so the hint lists the candidate keys instead.
 
 If you rely on native selection all the time, set `CLAUDE_CODE_DISABLE_MOUSE=1` to opt out of mouse capture while keeping the flicker-free rendering and flat memory:
 
@@ -165,3 +187,5 @@ Fullscreen rendering is a research preview feature. It has been tested on common
 If you encounter a problem, run `/feedback` inside Claude Code to report it, or open an issue on the [claude-code GitHub repo](https://github.com/anthropics/claude-code/issues). Include your terminal emulator name and version.
 
 To turn fullscreen rendering off, run `/tui default`, or unset `CLAUDE_CODE_NO_FLICKER` if you enabled it that way. To force the classic renderer regardless of the saved `tui` setting, set `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`. The classic renderer keeps the conversation in your terminal's native scrollback so `Cmd+f` and tmux copy mode work as usual.
+
+Background sessions opened from [agent view](/en/agent-view) or `claude attach` always use fullscreen rendering. The attaching terminal enters the alternate screen buffer to show the session, and the classic renderer has no scrollback or mouse handling there, so the `tui` setting and `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` do not apply to them.

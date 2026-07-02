@@ -1,0 +1,4 @@
+interface:
+  display_name: "Compare Docs"
+  short_description: "Rank full Claude/Gemini/Codex docs feature sets"
+  default_prompt: "Use $compare-docs to analyze all cached Claude, Gemini, and Codex docs with the fixed rubric and return rankings, strengths, and gaps."
